@@ -95,6 +95,12 @@ CqlTypeReference* CqlTypeFactory::ReferenceFromPython(PyObject* pyCqlType)
         return (type ? new CqlOwnedTypeReference(type) : NULL);
     }
 
+    if (typeName == "list")
+    {
+        CqlType* type = CqlListType::FromPython(pyCqlType, *this);
+        return (type ? new CqlOwnedTypeReference(type) : NULL);
+    }
+
     // If not, we cannot handle this type.
     PyErr_SetString(PyExc_NotImplementedError,
                     "unsupported CQL type");

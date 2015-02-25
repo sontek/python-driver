@@ -81,7 +81,7 @@ PyMODINIT_FUNC initccassandra(void)
         PyErr_SetString(PyExc_ImportError, "error initializing ccassandra");
         return;
     }
-    
+
     // Initialize the module.
     PyObject* module;
 

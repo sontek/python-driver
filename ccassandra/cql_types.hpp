@@ -227,6 +227,37 @@ namespace pyccassandra
     private:
         std::vector<CqlTypeReference*> _subtypes;
     };
+
+
+    /// List CQL type.
+    class CqlListType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a list CQL type.
+
+        /// @param itemType Item type. The list type takes over ownership of
+        /// the reference, and it should therefore *not* be released by the
+        /// caller. This is not enforced, so be wary.
+        CqlListType(CqlTypeReference* itemType);
+
+
+        /// List CQL type from Python CQL type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL list type representation for the Python CQL type
+        /// if successful, otherwise NULL, in which case appropriate Python
+        /// errors have been set.
+        static CqlListType* FromPython(PyObject* pyCqlType,
+                                       CqlTypeFactory& factory);
+
+
+        virtual ~CqlListType();
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
+    private:
+        CqlTypeReference* _itemType;
+    };
     
 
 #undef DECLARE_SIMPLE_CQL_TYPE_CLASS
