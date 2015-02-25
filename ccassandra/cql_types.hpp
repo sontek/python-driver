@@ -17,26 +17,29 @@ namespace pyccassandra
         /// Deserialize the data type from a buffer.
 
         /// @param buffer Buffer.
+        /// @param protocolVersion Protocol version.
         /// @returns a pointer to the deserialized Python object representation
         /// of the value if successful, otherwise NULL, in which case the
         /// proper Python exception has been set.
-        virtual PyObject* Deserialize(Buffer& buffer) = 0;
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion) = 0;
     private:
         CqlType(CqlType&);
         CqlType& operator =(CqlType&);
     };
 
 
-#define DECLARE_SIMPLE_CQL_TYPE_CLASS(_cls)                 \
-    class _cls                                              \
-        :   public CqlType                                  \
-    {                                                       \
-    public:                                                 \
-        _cls()                                              \
-            :   CqlType()                                   \
-        {}                                                  \
-        virtual ~_cls() {}                                  \
-        virtual PyObject* Deserialize(Buffer& buffer);      \
+#define DECLARE_SIMPLE_CQL_TYPE_CLASS(_cls)                        \
+    class _cls                                                     \
+        :   public CqlType                                         \
+    {                                                              \
+    public:                                                        \
+        _cls()                                                     \
+            :   CqlType()                                          \
+        {}                                                         \
+        virtual ~_cls() {}                                         \
+        virtual PyObject* Deserialize(Buffer& buffer,              \
+                                      int protocolVersion);        \
     }
 
 
@@ -98,7 +101,8 @@ namespace pyccassandra
                 _pythonUuidType(pythonUuidType)
         {}
         virtual ~CqlUuidType() {}
-        virtual PyObject* Deserialize(Buffer& buffer);
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
     private:
         PyObject* _pythonUuidType;
     };
@@ -117,7 +121,8 @@ namespace pyccassandra
                 )
         {}
         virtual ~CqlDateType() {}
-        virtual PyObject* Deserialize(Buffer& buffer);
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
     private:
         PyObject* _pythonDatetimeUtcFromTimestamp;
     };
@@ -137,7 +142,8 @@ namespace pyccassandra
                 _pythonDecimalType(pythonDecimalType)
         {}
         virtual ~CqlDecimalType() {}
-        virtual PyObject* Deserialize(Buffer& buffer);
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
     private:
         PyObject* _pythonDecimalType;
     };
