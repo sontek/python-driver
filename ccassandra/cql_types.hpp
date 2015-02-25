@@ -258,7 +258,39 @@ namespace pyccassandra
     private:
         CqlTypeReference* _itemType;
     };
-    
+
+
+    /// Set CQL type.
+    class CqlSetType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a set CQL type.
+
+        /// @param itemType Item type. The set type takes over ownership of
+        /// the reference, and it should therefore *not* be released by the
+        /// caller. This is not enforced, so be wary.
+        CqlSetType(CqlTypeReference* itemType);
+
+
+        /// Set CQL type from Python CQL type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL set type representation for the Python CQL type
+        /// if successful, otherwise NULL, in which case appropriate Python
+        /// errors have been set.
+        static CqlSetType* FromPython(PyObject* pyCqlType,
+                                      CqlTypeFactory& factory);
+
+
+        virtual ~CqlSetType();
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
+    private:
+        CqlTypeReference* _itemType;
+        PyObject* _pySetType;
+    };
+
 
 #undef DECLARE_SIMPLE_CQL_TYPE_CLASS
 }

@@ -16,6 +16,8 @@ from cassandra.util import OrderedMap, sortedset
 # TODO: lists, tuples etc. with empty values.
 marshalled_value_pairs = (
     # binary form, type, python native type, protocol
+
+    # List.
     (b'\x00\x00\x00\x03\x00\x00\x00\x04\x00\x00\x04\xd2\x00\x00\x00\x04\x00'
      b'\x00\x11\xd7\x00\x00\x00\x04\x00\x014\x90',
      'ListType(Int32Type)',
@@ -26,7 +28,19 @@ marshalled_value_pairs = (
      'ListType(Int32Type)',
      [1234, 4567, 78992],
      2),
-    
+
+    # Set.
+    (b'\x00\x03\x00\x04\x00\x00\x04\xd2\x00\x04\x00\x00\x11\xd7\x00\x04\x00'
+     b'\x014\x90',
+     'SetType(Int32Type)',
+     sortedset([1234, 4567, 78992]),
+     2),
+    (b'\x00\x00\x00\x03\x00\x00\x00\x04\x00\x00\x04\xd2\x00\x00\x00\x04\x00'
+     b'\x00\x11\xd7\x00\x00\x00\x04\x00\x014\x90',
+     'SetType(Int32Type)',
+     sortedset([1234, 4567, 78992]),
+     3),
+
     (b'lorem ipsum dolor sit amet', 'AsciiType', 'lorem ipsum dolor sit amet', 3),
     (b'', 'AsciiType', '', 3),
     (b'\x01', 'BooleanType', True, 3),

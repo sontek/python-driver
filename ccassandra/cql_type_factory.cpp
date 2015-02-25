@@ -1,6 +1,7 @@
 #include <stdexcept>
 
 #include "cql_type_factory.hpp"
+#include "cql_type_utils.hpp"
 
 
 using namespace pyccassandra;
@@ -9,23 +10,14 @@ using namespace pyccassandra;
 CqlTypeFactory::CqlTypeFactory()
 {
     // Import the types on which we depend.
-#define IMPORT_PYTHON_MODULE(_to, _name)            \
-    PyObject* _to = PyImport_ImportModule(_name);   \
-    if (!_to)                                       \
-        throw std::runtime_error("error importing " _name)
-#define STORE_ATTR(_to, _from, _name)                       \
-    PyObject* _to = PyObject_GetAttrString(_from, _name);   \
-    if (!_to) \
-        throw std::runtime_error("error getting " _name)
+    ImportPythonModuleOrThrow(pyUuid, "uuid");
+    StoreAttributeOrThrow(pyUuidUuid, pyUuid, "UUID");
 
-    IMPORT_PYTHON_MODULE(pyUuid, "uuid");
-    STORE_ATTR(pyUuidUuid, pyUuid, "UUID");
+    ImportPythonModuleOrThrow(pyDatetime, "datetime");
+    StoreAttributeOrThrow(pyDatetimeDatetime, pyDatetime, "datetime");
 
-    IMPORT_PYTHON_MODULE(pyDatetime, "datetime");
-    STORE_ATTR(pyDatetimeDatetime, pyDatetime, "datetime");
-
-    IMPORT_PYTHON_MODULE(pyDecimal, "decimal");
-    STORE_ATTR(pyDecimalDecimal, pyDecimal, "Decimal");
+    ImportPythonModuleOrThrow(pyDecimal, "decimal");
+    StoreAttributeOrThrow(pyDecimalDecimal, pyDecimal, "Decimal");
 
     // Initialize the simple type name map.
     _simpleTypeNameMap["ascii"] = new CqlAsciiType();
@@ -98,6 +90,12 @@ CqlTypeReference* CqlTypeFactory::ReferenceFromPython(PyObject* pyCqlType)
     if (typeName == "list")
     {
         CqlType* type = CqlListType::FromPython(pyCqlType, *this);
+        return (type ? new CqlOwnedTypeReference(type) : NULL);
+    }
+
+    if (typeName == "set")
+    {
+        CqlType* type = CqlSetType::FromPython(pyCqlType, *this);
         return (type ? new CqlOwnedTypeReference(type) : NULL);
     }
 
