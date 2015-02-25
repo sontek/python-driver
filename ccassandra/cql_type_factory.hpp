@@ -8,50 +8,6 @@
 
 namespace pyccassandra
 {
-    class CqlTypeReference
-    {
-    public:
-        virtual ~CqlTypeReference() {}
-        CqlType* Get()
-        {
-            return Referenced;
-        }
-    protected:
-        CqlTypeReference(CqlType* referenced)
-            :   Referenced(referenced)
-        {}
-
-        CqlType* Referenced;
-    };
-
-
-    class CqlBorrowedTypeReference
-        :   public CqlTypeReference
-    {
-    public:
-        CqlBorrowedTypeReference(CqlType* referenced)
-            :   CqlTypeReference(referenced)
-        {}
-
-        virtual ~CqlBorrowedTypeReference() {}
-    };
-    
-
-    class CqlOwnedTypeReference
-        :   public CqlTypeReference
-    {
-    public:
-        CqlOwnedTypeReference(CqlType* referenced)
-            :   CqlTypeReference(referenced)
-        {}
-        
-        virtual ~CqlOwnedTypeReference()
-        {
-            delete Referenced;
-        }
-    };
-
-
     /// CQL type factory.
 
     /// Produceses *references* to CQL type representations. References are

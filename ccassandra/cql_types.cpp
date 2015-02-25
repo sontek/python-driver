@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "cql_types.hpp"
+#include "cql_type_factory.hpp"
 #include "marshal.hpp"
 
 
@@ -232,4 +233,158 @@ PyObject* CqlDecimalType::Deserialize(Buffer& buffer, int)
     }
 
     return result;
+}
+
+CqlTupleType::CqlTupleType(const std::vector<CqlTypeReference*>& subtypes)
+    :   _subtypes(subtypes)
+{
+    
+}
+
+CqlTupleType* CqlTupleType::FromPython(PyObject* pyCqlType,
+                                       CqlTypeFactory& factory)
+{
+    // Attempt to resolve the subtypes.
+    PyObject* pySubtypeList = PyObject_GetAttrString(pyCqlType, "subtypes");
+    if (!pySubtypeList)
+        return NULL;
+
+    // Resolve Python representations of subtypes.
+    std::vector<PyObject*> pySubtypes;
+
+    if (PyTuple_Check(pySubtypeList))
+    {
+        Py_ssize_t numSubtypes = PyTuple_Size(pySubtypeList);
+        pySubtypes.reserve(numSubtypes);
+
+        for (Py_ssize_t i = 0; i < numSubtypes; ++i)
+        {
+            PyObject* pySubtype = PyTuple_GetItem(pySubtypeList, i);
+            if (pySubtype == NULL)
+            {
+                Py_DECREF(pySubtypeList);
+                return NULL;
+            }
+
+            pySubtypes.push_back(pySubtype);
+        }
+    }
+    else if (PyList_Check(pySubtypeList))
+    {
+        Py_ssize_t numSubtypes = PyList_Size(pySubtypeList);
+        pySubtypes.reserve(numSubtypes);
+
+        for (Py_ssize_t i = 0; i < numSubtypes; ++i)
+        {
+            PyObject* pySubtype = PyList_GetItem(pySubtypeList, i);
+            if (pySubtype == NULL)
+            {
+                Py_DECREF(pySubtypeList);
+                return NULL;
+            }
+
+            pySubtypes.push_back(pySubtype);
+        }
+    }
+    else
+    {
+        Py_DECREF(pySubtypeList);
+        PyErr_SetString(PyExc_TypeError, "invalid subtypes for tuple");
+        return NULL;
+    }
+
+    // Resolve the subtypes.
+    std::vector<CqlTypeReference*> subtypes;
+
+    for (std::size_t i = 0; i < pySubtypes.size(); ++i)
+    {
+        PyObject* pySubtype = pySubtypes[i];
+        CqlTypeReference* subtype = factory.ReferenceFromPython(pySubtype);
+
+        if (!subtype)
+        {
+            for (std::size_t j = 0; j < subtypes.size(); ++j)
+                delete subtypes[j];
+
+            Py_DECREF(pySubtypeList);
+
+            return NULL;
+        }
+
+        subtypes.push_back(subtype);
+    }
+
+    Py_DECREF(pySubtypeList);
+
+    return new CqlTupleType(subtypes);
+}
+
+CqlTupleType::~CqlTupleType()
+{
+    std::vector<CqlTypeReference*>::iterator it = _subtypes.begin();
+
+    while (it != _subtypes.end())
+    {
+        delete *it++;
+    }
+}
+
+PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
+{
+    // Items in tuples are always encoded with at least protocol version 3.
+    if (protocolVersion < 3)
+        protocolVersion = 3;
+
+    // Initialize a tuple.
+    PyObject* tuple = PyTuple_New(_subtypes.size());
+    if (!tuple)
+        return NULL;
+
+    // Drain as many items from the buffer as possible.
+    std::size_t missing = _subtypes.size();
+
+    for (std::size_t i = 0; i < _subtypes.size(); ++i)
+    {
+        // Read the size of the item.
+        const unsigned char* sizeData = buffer.Consume(4);
+        if (!sizeData)
+            break;
+        int32_t size = UnpackInt32(sizeData);
+
+        // Create a local buffer for the item.
+        if (size < 0)
+        {
+            Py_DECREF(tuple);
+            PyErr_SetString(PyExc_ValueError, "negative item size in tuple");
+            return NULL;
+        }
+
+        const unsigned char* itemData = buffer.Consume(size);
+        if (!itemData)
+        {
+            Py_DECREF(tuple);
+            PyErr_SetString(PyExc_EOFError,
+                            "unexpected end of buffer while reading tuple");
+            return NULL;
+        }
+
+        Buffer itemBuffer(itemData, size);
+        PyObject* des = _subtypes[i]->Get()->Deserialize(itemBuffer,
+                                                         protocolVersion);
+        if (!des)
+        {
+            Py_DECREF(tuple);
+            return NULL;
+        }
+
+        PyTuple_SetItem(tuple, i, des);
+
+        --missing;
+    }
+
+    // Backfill with Nones.
+    while (missing--)
+        PyTuple_SetItem(tuple, missing, Py_None);
+
+    return tuple;
 }

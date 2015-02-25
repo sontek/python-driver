@@ -8,9 +8,9 @@
 // PGP byte ordering):
 //
 // gcc -E -dM - < /dev/null |grep ENDIAN
-#if __LITTLE_ENDIAN__ || __BYTE_ORDER__ == 1234
+#if __LITTLE_ENDIAN__ || __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     #define IS_LITTLE_ENDIAN 1
-#elif __BIG_ENDIAN__ || __BYTE_ORDER__ == 4321
+#elif __BIG_ENDIAN__ || __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     #define IS_LITTLE_ENDIAN 0
 #else
     #error Unsupported compiler or endianness.

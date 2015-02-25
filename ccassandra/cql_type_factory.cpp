@@ -86,6 +86,14 @@ CqlTypeReference* CqlTypeFactory::ReferenceFromPython(PyObject* pyCqlType)
         return new CqlBorrowedTypeReference(simple->second);
 
     // If we have a more complex type, identify it and attempt to construct it.
+    //
+    // This could possibly be sped up by using, say, a perfect hash, with
+    // pointers to individual callback functions.
+    if (typeName == "tuple")
+    {
+        CqlType* type = CqlTupleType::FromPython(pyCqlType, *this);
+        return (type ? new CqlOwnedTypeReference(type) : NULL);
+    }
 
     // If not, we cannot handle this type.
     PyErr_SetString(PyExc_NotImplementedError,

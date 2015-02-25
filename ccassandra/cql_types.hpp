@@ -1,11 +1,16 @@
 #ifndef __PYCCASSANDRA_CQLTYPES
 #define __PYCCASSANDRA_CQLTYPES
+#include <vector>
+
 #include "buffer.hpp"
 #include "python.hpp"
 
 
 namespace pyccassandra
 {
+    class CqlTypeFactory;
+
+    
     /// CQL type.
     class CqlType
     {
@@ -41,6 +46,50 @@ namespace pyccassandra
         virtual PyObject* Deserialize(Buffer& buffer,              \
                                       int protocolVersion);        \
     }
+
+
+    class CqlTypeReference
+    {
+    public:
+        virtual ~CqlTypeReference() {}
+        CqlType* Get()
+        {
+            return Referenced;
+        }
+    protected:
+        CqlTypeReference(CqlType* referenced)
+            :   Referenced(referenced)
+        {}
+
+        CqlType* Referenced;
+    };
+
+
+    class CqlBorrowedTypeReference
+        :   public CqlTypeReference
+    {
+    public:
+        CqlBorrowedTypeReference(CqlType* referenced)
+            :   CqlTypeReference(referenced)
+        {}
+
+        virtual ~CqlBorrowedTypeReference() {}
+    };
+    
+
+    class CqlOwnedTypeReference
+        :   public CqlTypeReference
+    {
+    public:
+        CqlOwnedTypeReference(CqlType* referenced)
+            :   CqlTypeReference(referenced)
+        {}
+        
+        virtual ~CqlOwnedTypeReference()
+        {
+            delete Referenced;
+        }
+    };
 
 
     /// 32-bit signed integer CQL type.
@@ -148,6 +197,37 @@ namespace pyccassandra
         PyObject* _pythonDecimalType;
     };
 
+
+    /// Tuple CQL type.
+    class CqlTupleType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a tuple CQL type.
+
+        /// @param subtypes Subtypes. The tuple type takes over ownership of
+        /// the references, and they should therefore *not* be released by
+        /// the caller. This is not enforced, so be wary.
+        CqlTupleType(const std::vector<CqlTypeReference*>& subtypes);
+
+
+        /// Tuple CQL type from Python CQL type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL tuple type representation for the Python CQL type
+        /// if successful, otherwise NULL, in which case appropriate Python
+        /// errors have been set.
+        static CqlTupleType* FromPython(PyObject* pyCqlType,
+                                        CqlTypeFactory& factory);
+
+
+        virtual ~CqlTupleType();
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
+    private:
+        std::vector<CqlTypeReference*> _subtypes;
+    };
+    
 
 #undef DECLARE_SIMPLE_CQL_TYPE_CLASS
 }
