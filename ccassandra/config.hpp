@@ -8,7 +8,7 @@
 // PGP byte ordering):
 //
 // gcc -E -dM - < /dev/null |grep ENDIAN
-#if __LITTLE_ENDIAN__
+#if ((__LITTLE_ENDIAN__) || (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__))
     #define IS_LITTLE_ENDIAN 1
 #elif __BIG_ENDIAN__
     #define IS_LITTLE_ENDIAN 0

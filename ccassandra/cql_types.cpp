@@ -15,7 +15,7 @@ CqlType::~CqlType()
 
 
 #define IMPLEMENT_SIMPLE_CQL_TYPE_DESERIALIZE(_cls, _desc, _size, _unmarshal) \
-    PyObject* _cls::Deserialize(Buffer& buffer)                         \
+    PyObject* _cls::Deserialize(Buffer& buffer, int)                    \
     {                                                                   \
         const unsigned char* data = buffer.Consume(_size);              \
         if (!data)                                                      \
@@ -55,7 +55,7 @@ IMPLEMENT_SIMPLE_CQL_TYPE_DESERIALIZE(CqlBooleanType,
 #undef IMPLEMENT_SIMPLE_CQL_TYPE_DESERIALIZE
 
 
-PyObject* CqlBytesType::Deserialize(Buffer& buffer)
+PyObject* CqlBytesType::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
     if (size == 0)
@@ -66,7 +66,7 @@ PyObject* CqlBytesType::Deserialize(Buffer& buffer)
 }
 
 
-PyObject* CqlUtf8Type::Deserialize(Buffer& buffer)
+PyObject* CqlUtf8Type::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
     const char* data = (size ?
@@ -85,7 +85,7 @@ PyObject* CqlUtf8Type::Deserialize(Buffer& buffer)
 }
 
 
-PyObject* CqlUuidType::Deserialize(Buffer& buffer)
+PyObject* CqlUuidType::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
     const char* data = (size ?
@@ -110,7 +110,7 @@ PyObject* CqlUuidType::Deserialize(Buffer& buffer)
 }
 
 
-PyObject* CqlInetAddressType::Deserialize(Buffer& buffer)
+PyObject* CqlInetAddressType::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
 
@@ -138,7 +138,7 @@ PyObject* CqlInetAddressType::Deserialize(Buffer& buffer)
 }
 
 
-PyObject* CqlDateType::Deserialize(Buffer& buffer)
+PyObject* CqlDateType::Deserialize(Buffer& buffer, int)
 {
     const unsigned char* data = buffer.Consume(8);
     if (!data)
@@ -168,14 +168,14 @@ PyObject* CqlDateType::Deserialize(Buffer& buffer)
 }
 
 
-PyObject* CqlIntegerType::Deserialize(Buffer& buffer)
+PyObject* CqlIntegerType::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
     return UnmarshalVarint(buffer.Consume(size), size);
 }
 
 
-PyObject* CqlDecimalType::Deserialize(Buffer& buffer)
+PyObject* CqlDecimalType::Deserialize(Buffer& buffer, int)
 {
     PyObject* result = NULL;
     

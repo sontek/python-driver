@@ -127,6 +127,7 @@ ccassandra_ext = Extension('ccassandra',
                            sources=[
                                'ccassandra/ccassandra.cpp',
                                'ccassandra/cql_types.cpp',
+                               'ccassandra/cql_type_factory.cpp',
                            ])
 
 class build_extensions(build_ext):
