@@ -61,6 +61,7 @@ marshalled_value_pairs = (
     (b'I\x15~\xfc\xef<\x9d\xe3\x16\x98\xaf\x80\x1f\xb4\x0b*', 'UUIDType', UUID('49157efc-ef3c-9de3-1698-af801fb40b2a')),
     (b'', 'UUIDType', None),
     (b'', 'MapType(AsciiType, BooleanType)', None),
+    (b'\x00\x00\x00\x01\x01', 'TupleType(IntegerType)', (1,)),
     (b'', 'ListType(FloatType)', None),
     (b'', 'SetType(LongType)', None),
     (b'\x00\x00', 'MapType(DecimalType, BooleanType)', OrderedMap()),
