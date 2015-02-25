@@ -12,7 +12,7 @@ namespace pyccassandra
     {
     public:
         virtual ~CqlTypeReference() {}
-        CqlType* operator *()
+        CqlType* Get()
         {
             return Referenced;
         }

@@ -28,7 +28,7 @@ static PyObject* ccassandra_deserialize_cqltype(PyObject*,
         NULL,
     };
 
-    if (!PyArg_ParseTupleAndKeywords(Args,
+    if (!PyArg_ParseTupleAndKeywords(args,
                                      kwargs,
                                      "s#O|i",
                                      const_cast<char**>(keywords),
@@ -40,14 +40,14 @@ static PyObject* ccassandra_deserialize_cqltype(PyObject*,
 
     // Get a CQL type implementation.
     CqlTypeReference* typeRef =
-        cqlTypeFactory.ReferenceFromPython(pyCqlType);
+        cqlTypeFactory->ReferenceFromPython(pyCqlType);
 
     if (!typeRef)
         return NULL;
 
     // Deserialize.
     pyccassandra::Buffer buffer(data, Py_ssize_t(dataLength));
-    PyObject* result = (*typeRef)->Deserialize(buffer, protocolVersion);
+    PyObject* result = typeRef->Get()->Deserialize(buffer, protocolVersion);
     delete typeRef;
     return result;
 }
@@ -78,7 +78,7 @@ PyMODINIT_FUNC initccassandra(void)
     }
     catch (...)
     {
-        PyErr_SetString(PyErr_ImportError, "error initializing ccassandra");
+        PyErr_SetString(PyExc_ImportError, "error initializing ccassandra");
         return;
     }
 
