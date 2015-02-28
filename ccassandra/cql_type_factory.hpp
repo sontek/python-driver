@@ -81,6 +81,14 @@ namespace pyccassandra
         CqlType* SetFromPython(PyObject* pyCqlType);
 
 
+        /// Get a CQL frozen type representation form a Python CQL frozen type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* FrozenFromPython(PyObject* pyCqlType);
+
+
         /// Vectorize CQL subtypes from a Python CQL type.
         bool VectorizePythonSubtypes(PyObject* pyCqlType,
                                      std::vector<CqlType*>& types);

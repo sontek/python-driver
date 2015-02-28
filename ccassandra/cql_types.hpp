@@ -135,7 +135,7 @@ namespace pyccassandra
         PyObject* _pyDatetimeDatetimeUtcFromTimestamp;
     };
 
-    
+
     /// Timestamp CQL type.
     typedef CqlDateType CqlTimestampType;
 
@@ -246,6 +246,28 @@ namespace pyccassandra
         CqlType* _keyType;
         CqlType* _valueType;
         PyObject* _pyMapType;
+    };
+
+
+    /// Frozen CQL type.
+    class CqlFrozenType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a frozen CQL type.
+
+        /// @param wrappedType Wrapped type. The frozen type takes over
+        /// ownership of the reference, and it should therefore *not* be
+        /// released by the caller. This is not enforced, so be wary.
+        CqlFrozenType(CqlType* wrappedType);
+
+
+        virtual ~CqlFrozenType();
+
+
+        virtual PyObject* Deserialize(Buffer& buffer, int protocolVersion);
+    private:
+        CqlType* _wrappedType;
     };
 
 

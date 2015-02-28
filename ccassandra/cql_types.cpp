@@ -234,3 +234,20 @@ PyObject* CqlDecimalType::Deserialize(Buffer& buffer, int)
 
     return result;
 }
+
+CqlFrozenType::CqlFrozenType(CqlType* wrappedType)
+    :   CqlType(),
+        _wrappedType(wrappedType)
+{
+
+}
+
+CqlFrozenType::~CqlFrozenType()
+{
+    delete _wrappedType;
+}
+
+PyObject* CqlFrozenType::Deserialize(Buffer& buffer, int protocolVersion)
+{
+    return _wrappedType->Deserialize(buffer, protocolVersion);
+}

@@ -66,6 +66,7 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
         return NULL;
     }
 
+    std::string typeNameString(cTypeName);
     CqlTypeName typeName = CqlTypeNameFromString(cTypeName);
 
     Py_DECREF(pyTypeName);
@@ -96,7 +97,7 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     case CqlFloatTypeName:
         return new CqlFloatType();
     case CqlFrozenTypeName:
-        break;
+        return FrozenFromPython(pyCqlType);
     case CqlInetTypeName:
         return new CqlInetAddressType();
     case CqlInt32TypeName:
@@ -130,7 +131,9 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     }
 
     // If not, we cannot handle this type.
-    PyErr_SetString(PyExc_NotImplementedError, "unsupported CQL type");
+    PyErr_Format(PyExc_NotImplementedError,
+                 "unsupported CQL type: %s",
+                 typeNameString.c_str());
     return NULL;
 }
 
@@ -241,4 +244,21 @@ bool CqlTypeFactory::VectorizePythonSubtypes(
     bool result = VectorizeManyFromPython(pyCqlTypes, types);
     Py_DECREF(pySubtypeList);
     return result;
+}
+
+CqlType* CqlTypeFactory::FrozenFromPython(PyObject* pyCqlType)
+{
+    // Attempt to resolve the subtypes.
+    std::vector<CqlType*> subtypes;
+    if (!VectorizePythonSubtypes(pyCqlType, subtypes))
+        return NULL;
+
+    // Make sure there's only one subtype.
+    if (subtypes.size() != 1)
+    {
+        PyErr_SetString(PyExc_TypeError, "frozen does not have one subtype");
+        return NULL;
+    }
+
+    return new CqlFrozenType(subtypes[0]);
 }
