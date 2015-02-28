@@ -35,7 +35,10 @@ CqlTypeFactory::CqlTypeFactory()
     StoreAttributeToOrThrow(_pyUuidUuid, pyUuid, "UUID");
 
     ImportPythonModuleOrThrow(pyDatetime, "datetime");
-    StoreAttributeToOrThrow(_pyDatetimeDatetime, pyDatetime, "datetime");
+    StoreAttributeOrThrow(pyDatetimeDatetime, pyDatetime, "datetime");
+    StoreAttributeToOrThrow(_pyDatetimeDatetimeUtcFromTimestamp,
+                            pyDatetimeDatetime,
+                            "utcfromtimestamp");
 
     ImportPythonModuleOrThrow(pyDecimal, "decimal");
     StoreAttributeToOrThrow(_pyDecimalDecimal, pyDecimal, "Decimal");
@@ -113,7 +116,7 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     case CqlTimeUuidTypeName:
         return new CqlUuidType(_pyUuidUuid);
     case CqlTimestampTypeName:
-        return new CqlTimestampType(_pyDatetimeDatetime);
+        return new CqlTimestampType(_pyDatetimeDatetimeUtcFromTimestamp);
     case CqlTupleTypeName:
         return TupleFromPython(pyCqlType);
     case CqlTextTypeName:

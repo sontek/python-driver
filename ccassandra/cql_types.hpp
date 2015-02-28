@@ -122,18 +122,17 @@ namespace pyccassandra
         :   public CqlType
     {
     public:
-        CqlDateType(PyObject* pythonDatetimeType)
+        CqlDateType(PyObject* pyDatetimeDatetimeUtcFromTimestamp)
             :   CqlType(),
-                _pythonDatetimeUtcFromTimestamp(
-                    PyObject_GetAttrString(pythonDatetimeType,
-                                           "utcfromtimestamp")
+                _pyDatetimeDatetimeUtcFromTimestamp(
+                    pyDatetimeDatetimeUtcFromTimestamp
                 )
         {}
         virtual ~CqlDateType() {}
         virtual PyObject* Deserialize(Buffer& buffer,
                                       int protocolVersion);
     private:
-        PyObject* _pythonDatetimeUtcFromTimestamp;
+        PyObject* _pyDatetimeDatetimeUtcFromTimestamp;
     };
 
     

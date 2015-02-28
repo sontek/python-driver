@@ -43,7 +43,7 @@ namespace pyccassandra
 
 
         PyObject* _pyUuidUuid;
-        PyObject* _pyDatetimeDatetime;
+        PyObject* _pyDatetimeDatetimeUtcFromTimestamp;
         PyObject* _pyDecimalDecimal;
         PyObject* _pySortedSet;
         PyObject* _pyOrderedMap;

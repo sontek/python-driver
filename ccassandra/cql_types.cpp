@@ -159,7 +159,7 @@ PyObject* CqlDateType::Deserialize(Buffer& buffer, int)
     PyObject* args = PyTuple_Pack(1, pyTimestamp);
     if (args)
     {
-        date = PyObject_CallObject(_pythonDatetimeUtcFromTimestamp, args);
+        date = PyObject_CallObject(_pyDatetimeDatetimeUtcFromTimestamp, args);
         Py_DECREF(args);
     }
 
