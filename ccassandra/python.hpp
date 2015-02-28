@@ -18,5 +18,35 @@ namespace pyccassandra
     /// failure with the corresponding Python exception set.
     bool VectorizePythonContainer(PyObject* container,
                                   std::vector<PyObject*>& target);
+
+
+    /// Scoped Python reference.
+
+    /// RAII-style Python reference, which will be released upon exiting the
+    /// scope. This behavior can be cancelled by calling Steal on the scoped
+    /// reference.
+    class ScopedReference
+    {
+    public:
+        ScopedReference(PyObject* obj)
+            :   _obj(obj)
+        {
+        }
+
+        ~ScopedReference()
+        {
+            if (_obj)
+                Py_DECREF(_obj);
+        }
+
+
+        /// Steal the reference.
+        void Steal()
+        {
+            _obj = NULL;
+        }
+    private:
+        PyObject* _obj;
+    };
 }
 #endif

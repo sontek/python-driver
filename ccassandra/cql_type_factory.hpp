@@ -47,6 +47,7 @@ namespace pyccassandra
         PyObject* _pyDecimalDecimal;
         PyObject* _pySortedSet;
         PyObject* _pyOrderedMap;
+        PyObject* _pyCassandraCqlUserType;
 
 
         /// Get a CQL tuple type representation form a Python CQL tuple type.
@@ -95,6 +96,14 @@ namespace pyccassandra
         /// @returns the CQL type representation if possible, otherwise NULL
         /// with the appropriate Python error set.
         CqlType* ReversedFromPython(PyObject* pyCqlType);
+
+
+        /// Get a CQL user type representation form a Python CQL type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* UserTypeFromPython(PyObject* pyCqlType);
 
 
         /// Vectorize CQL subtypes from a Python CQL type.

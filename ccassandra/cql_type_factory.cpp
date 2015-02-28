@@ -46,6 +46,11 @@ CqlTypeFactory::CqlTypeFactory()
     ImportPythonModuleOrThrow(pyCassandraUtil, "cassandra.util");
     StoreAttributeToOrThrow(_pySortedSet, pyCassandraUtil, "sortedset");
     StoreAttributeToOrThrow(_pyOrderedMap, pyCassandraUtil, "OrderedMap");
+
+    ImportPythonModuleOrThrow(pyCassandraCqltypes, "cassandra.cqltypes");
+    StoreAttributeToOrThrow(_pyCassandraCqlUserType,
+                            pyCassandraCqltypes,
+                            "UserType");
 }
 
 
@@ -129,6 +134,9 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     case CqlVarcharTypeName:
         return new CqlVarcharType();
     }
+
+    if (PyObject_IsSubclass(pyCqlType, _pyCassandraCqlUserType))
+        return UserTypeFromPython(pyCqlType);
 
     // If not, we cannot handle this type.
     PyErr_Format(PyExc_NotImplementedError,
@@ -278,4 +286,96 @@ CqlType* CqlTypeFactory::ReversedFromPython(PyObject* pyCqlType)
     }
 
     return new CqlReversedType(subtypes[0]);
+}
+
+CqlType* CqlTypeFactory::UserTypeFromPython(PyObject* pyCqlType)
+{
+    // Attempt to resolved the mapped class and tuple type.
+    PyObject* pyMappedClass = PyObject_GetAttrString(pyCqlType, "mapped_class");
+
+    if ((pyMappedClass) && (pyMappedClass == Py_None))
+    {
+        Py_DECREF(pyMappedClass);
+        pyMappedClass = NULL;
+    }
+
+    ScopedReference pyMappedClassRef(pyMappedClass);
+
+    PyObject* pyTupleType = PyObject_GetAttrString(pyCqlType, "tuple_type");
+    
+    if ((pyTupleType) && (pyTupleType == Py_None))
+    {
+        Py_DECREF(pyTupleType);
+        pyTupleType = NULL;
+    }
+
+    ScopedReference pyTupleTypeRef(pyTupleType);
+
+    if ((!pyMappedClass) && (!pyTupleType))
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "provided CQL user type does not have neither a "
+                        "mapped class nor a tuple type");
+        return NULL;
+    }
+
+    // Attempt to resolve the field names.
+    PyObject* pyFieldNamesList = PyObject_GetAttrString(pyCqlType, "fieldnames");
+    if (!pyFieldNamesList)
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "provided type is not a correct CQL user type");
+        return NULL;
+    }
+    ScopedReference pyFieldNamesListRef(pyFieldNamesList);
+
+    std::vector<PyObject*> pyFieldNames;
+    if (!VectorizePythonContainer(pyFieldNamesList, pyFieldNames))
+        return NULL;
+
+    std::vector<std::string> fieldNames;
+    fieldNames.reserve(pyFieldNames.size());
+
+    for (std::size_t i = 0; i < pyFieldNames.size(); ++i)
+    {
+        char* fieldName;
+        Py_ssize_t fieldNameLength;
+
+        if (PyString_AsStringAndSize(pyFieldNames[i],
+                                     &fieldName,
+                                     &fieldNameLength) == -1)
+            return NULL;
+
+        fieldNames.push_back(std::string(fieldName, fieldNameLength));
+    }
+
+    // Attempt to resolve the subtypes.
+    std::vector<CqlType*> subtypes;
+    if (!VectorizePythonSubtypes(pyCqlType, subtypes))
+        return NULL;
+
+    if (subtypes.size() != fieldNames.size())
+    {
+        for (std::size_t i = 0; i < subtypes.size(); --i)
+            delete subtypes[i];
+
+        PyErr_SetString(PyExc_TypeError,
+                        "mismatch between number of field names and subtypes");
+        return NULL;
+    }
+
+    // Merge the field names and types.
+    std::vector<std::pair<std::string, CqlType*> > namesAndTypes;
+    namesAndTypes.reserve(subtypes.size());
+
+    for (std::size_t i = 0; i < subtypes.size(); ++i)
+        namesAndTypes.push_back(std::pair<std::string, CqlType*>(fieldNames[i],
+                                                                 subtypes[i]));
+
+    pyMappedClassRef.Steal();
+    pyTupleTypeRef.Steal();
+
+    return new CqlUserType(namesAndTypes,
+                           pyMappedClass,
+                           pyTupleType);
 }

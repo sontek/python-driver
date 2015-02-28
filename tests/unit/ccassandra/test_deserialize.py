@@ -6,12 +6,61 @@ except ImportError:
 from .loading import ccassandra
 
 import platform
+import six
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from cassandra.cqltypes import lookup_casstype
+from cassandra.cqltypes import (
+    lookup_casstype,
+    AsciiType,
+    IntegerType,
+    TupleType,
+    UserType,
+)
 from cassandra.util import OrderedMap, sortedset
+
+
+class TestUserType(object):
+    """Test-specific user type.
+    """
+
+    def __init__(self, a, b, c):
+        self.a = a
+        self.b = b
+        self.c = c
+
+    def __eq__(self, other):
+        return \
+            isinstance(other, self.__class__) and \
+            self.a == other.a and \
+            self.b == other.b and \
+            self.c == other.c
+
+
+test_user_type_udt_unmapped = UserType.make_udt_class(
+    keyspace='ks1',
+    udt_name='test_user_type_unmapped',
+    names_and_types=[
+        ('a', IntegerType),
+        ('b', AsciiType),
+        ('c', TupleType.apply_parameters([IntegerType, AsciiType])),
+    ],
+    mapped_class=None
+)
+
+
+test_user_type_udt_mapped = UserType.make_udt_class(
+    keyspace='ks1',
+    udt_name='test_user_type_mapped',
+    names_and_types=[
+        ('a', IntegerType),
+        ('b', AsciiType),
+        ('c', TupleType.apply_parameters([IntegerType, AsciiType])),
+    ],
+    mapped_class=TestUserType
+)
+
 
 # TODO: lists, tuples etc. with empty values.
 marshalled_value_pairs = (
@@ -101,6 +150,18 @@ marshalled_value_pairs = (
     (b'hello!', 'FrozenType(UTF8Type)', u'hello!', 3),
     (b'hello!', 'ReversedType(UTF8Type)', u'hello!', 2),
     (b'hello!', 'ReversedType(UTF8Type)', u'hello!', 3),
+
+    # User type.
+    (b'\x00\x00\x00\x01\x01\x00\x00\x00\x04food\x00\x00\x00\x0e\x00\x00\x00'
+     b'\x02\x01\xec\x00\x00\x00\x04fish',
+     test_user_type_udt_unmapped,
+     test_user_type_udt_unmapped.tuple_type(1, 'food', (492, 'fish')),
+     3),
+    (b'\x00\x00\x00\x01\x01\x00\x00\x00\x04food\x00\x00\x00\x0e\x00\x00\x00'
+     b'\x02\x01\xec\x00\x00\x00\x04fish',
+     test_user_type_udt_mapped,
+     TestUserType(1, 'food', (492, 'fish')),
+     3),    
 )
 
 ordered_map_value = OrderedMap([(u'\u307fbob', 199),
@@ -132,7 +193,10 @@ if ccassandra:
                 if expected is None:
                     continue
 
-                cql_type = lookup_casstype(cql_type_name)
+                if isinstance(cql_type_name, six.string_types):
+                    cql_type = lookup_casstype(cql_type_name)
+                else:
+                    cql_type = cql_type_name
 
                 try:
                     actual = ccassandra.deserialize_cqltype(ser, cql_type, protocol)

@@ -299,6 +299,55 @@ namespace pyccassandra
     };
 
 
+    /// User type.
+    class CqlUserType
+        :   public CqlType
+    {
+    public:
+        /// Names and type vector.
+        typedef std::vector<std::pair<std::string, CqlType*> >
+            NamesAndTypeVector;
+
+        
+        /// Initialize a user CQL type.
+
+        /// @param namesAndTypes Names and types of the user type's fields.
+        /// The user type takes over the ownership of the references, and they
+        /// should therefore *not* be released by the caller. This is not
+        /// enforced, so be wary.
+        /// @param pyMappedClass Mapped Python class. The user type steals the
+        /// reference. Can be NULL, in which case the tuple type cannot be
+        /// NULL.
+        /// @param pyTupleType Python tuple type. The user type steals the
+        /// reference. Must not be NULL if the mapped class is NULL.
+        /// @param subtypes Subtypes. The tuple type takes over ownership of
+        /// the references, and they should therefore *not* be released by
+        /// the caller. This is not enforced, so be wary.
+        CqlUserType(const NamesAndTypeVector& namesAndTypes,
+                    PyObject* pyMappedClass,
+                    PyObject* pyTupleType);
+
+
+        ~CqlUserType();
+
+
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
+    private:
+        virtual PyObject* DeserializeToMappedClass(Buffer& buffer,
+                                                   int protocolVersion);
+
+
+        virtual PyObject* DeserializeToTuple(Buffer& buffer,
+                                             int protocolVersion);
+
+
+        NamesAndTypeVector _namesAndTypes;
+        PyObject* _pyMappedClass;
+        PyObject* _pyTupleType;
+    };
+
+
 #undef DECLARE_SIMPLE_CQL_TYPE_CLASS
 }
 #endif
