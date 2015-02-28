@@ -97,8 +97,10 @@ marshalled_value_pairs = (
     (b'\x00\x00', 'ListType(FloatType)', [], 2),
     (b'\x00\x00', 'SetType(IntegerType)', sortedset(), 2),
     (b'\x00\x01\x00\x10\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0', 'ListType(TimeUUIDType)', [UUID(bytes=b'\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0')], 2),
-    ('hello!', 'FrozenType(UTF8Type)', u'hello!', 2),
-    ('hello!', 'FrozenType(UTF8Type)', u'hello!', 3),
+    (b'hello!', 'FrozenType(UTF8Type)', u'hello!', 2),
+    (b'hello!', 'FrozenType(UTF8Type)', u'hello!', 3),
+    (b'hello!', 'ReversedType(UTF8Type)', u'hello!', 2),
+    (b'hello!', 'ReversedType(UTF8Type)', u'hello!', 3),
 )
 
 ordered_map_value = OrderedMap([(u'\u307fbob', 199),

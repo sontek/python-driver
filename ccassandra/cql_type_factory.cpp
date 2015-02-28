@@ -111,7 +111,7 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     case CqlMapTypeName:
         return MapFromPython(pyCqlType);
     case CqlReversedTypeTypeName:
-        break;
+        return ReversedFromPython(pyCqlType);
     case CqlSetTypeName:
         return SetFromPython(pyCqlType);
     case CqlTimeUuidTypeName:
@@ -261,4 +261,21 @@ CqlType* CqlTypeFactory::FrozenFromPython(PyObject* pyCqlType)
     }
 
     return new CqlFrozenType(subtypes[0]);
+}
+
+CqlType* CqlTypeFactory::ReversedFromPython(PyObject* pyCqlType)
+{
+    // Attempt to resolve the subtypes.
+    std::vector<CqlType*> subtypes;
+    if (!VectorizePythonSubtypes(pyCqlType, subtypes))
+        return NULL;
+
+    // Make sure there's only one subtype.
+    if (subtypes.size() != 1)
+    {
+        PyErr_SetString(PyExc_TypeError, "reversed does not have one subtype");
+        return NULL;
+    }
+
+    return new CqlReversedType(subtypes[0]);
 }

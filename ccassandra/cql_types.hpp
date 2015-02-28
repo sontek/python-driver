@@ -249,9 +249,31 @@ namespace pyccassandra
     };
 
 
+    /// Proxy CQL type.
+    class CqlProxyType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a proxy CQL type.
+
+        /// @param wrappedType Wrapped type. The proxy type takes over
+        /// ownership of the reference, and it should therefore *not* be
+        /// released by the caller. This is not enforced, so be wary.
+        CqlProxyType(CqlType* wrappedType);
+
+
+        virtual ~CqlProxyType();
+
+
+        virtual PyObject* Deserialize(Buffer& buffer, int protocolVersion);
+    private:
+        CqlType* _wrappedType;
+    };
+
+
     /// Frozen CQL type.
     class CqlFrozenType
-        :   public CqlType
+        :   public CqlProxyType
     {
     public:
         /// Initialize a frozen CQL type.
@@ -260,14 +282,20 @@ namespace pyccassandra
         /// ownership of the reference, and it should therefore *not* be
         /// released by the caller. This is not enforced, so be wary.
         CqlFrozenType(CqlType* wrappedType);
+    };
 
 
-        virtual ~CqlFrozenType();
+    /// Reversed CQL type.
+    class CqlReversedType
+        :   public CqlProxyType
+    {
+    public:
+        /// Initialize a reversed CQL type.
 
-
-        virtual PyObject* Deserialize(Buffer& buffer, int protocolVersion);
-    private:
-        CqlType* _wrappedType;
+        /// @param wrappedType Wrapped type. The reversed type takes over
+        /// ownership of the reference, and it should therefore *not* be
+        /// released by the caller. This is not enforced, so be wary.
+        CqlReversedType(CqlType* wrappedType);
     };
 
 
