@@ -32,7 +32,8 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
     if (!itemCountData)
     {
         PyErr_SetString(PyExc_EOFError,
-                        "unexpected end of buffer while reading set");
+                        "unexpected end of buffer while reading map "
+                        "item count");
         return NULL;
     }
 
@@ -56,7 +57,8 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
         {
             Py_DECREF(tuple);
             PyErr_SetString(PyExc_EOFError,
-                            "unexpected end of buffer while reading map");
+                            "unexpected end of buffer while reading map "
+                            "key size");
             return NULL;
         }
 
@@ -76,7 +78,8 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             {
                 Py_DECREF(tuple);
                 PyErr_SetString(PyExc_EOFError,
-                                "unexpected end of buffer while reading map");
+                                "unexpected end of buffer while reading map "
+                                "key data");
                 return NULL;
             }
 
@@ -96,7 +99,8 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             Py_DECREF(tuple);
             Py_DECREF(key);
             PyErr_SetString(PyExc_EOFError,
-                            "unexpected end of buffer while reading map");
+                            "unexpected end of buffer while reading map "
+                            "value size");
             return NULL;
         }
 
@@ -117,7 +121,8 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
                 Py_DECREF(tuple);
                 Py_DECREF(key);
                 PyErr_SetString(PyExc_EOFError,
-                                "unexpected end of buffer while reading map");
+                                "unexpected end of buffer while reading map "
+                                "value");
                 return NULL;
             }
 

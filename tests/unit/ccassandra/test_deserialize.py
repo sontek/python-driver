@@ -93,10 +93,10 @@ marshalled_value_pairs = (
      (1234, True), 3),
     (b'', 'ListType(FloatType)', None, 3),
     (b'', 'SetType(LongType)', None, 3),
-    (b'\x00\x00', 'MapType(DecimalType, BooleanType)', OrderedMap(), 3),
-    (b'\x00\x00', 'ListType(FloatType)', [], 3),
-    (b'\x00\x00', 'SetType(IntegerType)', sortedset(), 3),
-    (b'\x00\x01\x00\x10\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0', 'ListType(TimeUUIDType)', [UUID(bytes=b'\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0')], 3),
+    (b'\x00\x00', 'MapType(DecimalType, BooleanType)', OrderedMap(), 2),
+    (b'\x00\x00', 'ListType(FloatType)', [], 2),
+    (b'\x00\x00', 'SetType(IntegerType)', sortedset(), 2),
+    (b'\x00\x01\x00\x10\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0', 'ListType(TimeUUIDType)', [UUID(bytes=b'\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0')], 2),
 )
 
 ordered_map_value = OrderedMap([(u'\u307fbob', 199),
@@ -106,8 +106,8 @@ ordered_map_value = OrderedMap([(u'\u307fbob', 199),
 # these following entries work for me right now, but they're dependent on
 # vagaries of internal python ordering for unordered types
 marshalled_value_pairs_unsafe = (
-    (b'\x00\x03\x00\x06\xe3\x81\xbfbob\x00\x04\x00\x00\x00\xc7\x00\x00\x00\x04\xff\xff\xff\xff\x00\x01\\\x00\x04\x00\x00\x00\x00', 'MapType(UTF8Type, Int32Type)', ordered_map_value, 3),
-    (b'\x00\x02\x00\x08@\x01\x99\x99\x99\x99\x99\x9a\x00\x08@\x14\x00\x00\x00\x00\x00\x00', 'SetType(DoubleType)', sortedset([2.2, 5.0]), 3),
+    (b'\x00\x03\x00\x06\xe3\x81\xbfbob\x00\x04\x00\x00\x00\xc7\x00\x00\x00\x04\xff\xff\xff\xff\x00\x01\\\x00\x04\x00\x00\x00\x00', 'MapType(UTF8Type, Int32Type)', ordered_map_value, 2),
+    (b'\x00\x02\x00\x08@\x01\x99\x99\x99\x99\x99\x9a\x00\x08@\x14\x00\x00\x00\x00\x00\x00', 'SetType(DoubleType)', sortedset([2.2, 5.0]), 2),
     (b'\x00', 'IntegerType', 0, 3),
 )
 
