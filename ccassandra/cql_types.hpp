@@ -8,9 +8,6 @@
 
 namespace pyccassandra
 {
-    class CqlTypeFactory;
-
-    
     /// CQL type.
     class CqlType
     {
@@ -28,6 +25,13 @@ namespace pyccassandra
         /// proper Python exception has been set.
         virtual PyObject* Deserialize(Buffer& buffer,
                                       int protocolVersion) = 0;
+
+
+        virtual PyObject* Empty()
+        {
+            Py_INCREF(Py_None);
+            return Py_None;
+        }
     private:
         CqlType(CqlType&);
         CqlType& operator =(CqlType&);
@@ -46,50 +50,6 @@ namespace pyccassandra
         virtual PyObject* Deserialize(Buffer& buffer,              \
                                       int protocolVersion);        \
     }
-
-
-    class CqlTypeReference
-    {
-    public:
-        virtual ~CqlTypeReference() {}
-        CqlType* Get()
-        {
-            return Referenced;
-        }
-    protected:
-        CqlTypeReference(CqlType* referenced)
-            :   Referenced(referenced)
-        {}
-
-        CqlType* Referenced;
-    };
-
-
-    class CqlBorrowedTypeReference
-        :   public CqlTypeReference
-    {
-    public:
-        CqlBorrowedTypeReference(CqlType* referenced)
-            :   CqlTypeReference(referenced)
-        {}
-
-        virtual ~CqlBorrowedTypeReference() {}
-    };
-    
-
-    class CqlOwnedTypeReference
-        :   public CqlTypeReference
-    {
-    public:
-        CqlOwnedTypeReference(CqlType* referenced)
-            :   CqlTypeReference(referenced)
-        {}
-        
-        virtual ~CqlOwnedTypeReference()
-        {
-            delete Referenced;
-        }
-    };
 
 
     /// 32-bit signed integer CQL type.
@@ -208,24 +168,14 @@ namespace pyccassandra
         /// @param subtypes Subtypes. The tuple type takes over ownership of
         /// the references, and they should therefore *not* be released by
         /// the caller. This is not enforced, so be wary.
-        CqlTupleType(const std::vector<CqlTypeReference*>& subtypes);
-
-
-        /// Tuple CQL type from Python CQL type.
-
-        /// @param pyCqlType Python CQL type.
-        /// @returns the CQL tuple type representation for the Python CQL type
-        /// if successful, otherwise NULL, in which case appropriate Python
-        /// errors have been set.
-        static CqlTupleType* FromPython(PyObject* pyCqlType,
-                                        CqlTypeFactory& factory);
+        CqlTupleType(const std::vector<CqlType*>& subtypes);
 
 
         virtual ~CqlTupleType();
         virtual PyObject* Deserialize(Buffer& buffer,
                                       int protocolVersion);
     private:
-        std::vector<CqlTypeReference*> _subtypes;
+        std::vector<CqlType*> _subtypes;
     };
 
 
@@ -239,24 +189,14 @@ namespace pyccassandra
         /// @param itemType Item type. The list type takes over ownership of
         /// the reference, and it should therefore *not* be released by the
         /// caller. This is not enforced, so be wary.
-        CqlListType(CqlTypeReference* itemType);
-
-
-        /// List CQL type from Python CQL type.
-
-        /// @param pyCqlType Python CQL type.
-        /// @returns the CQL list type representation for the Python CQL type
-        /// if successful, otherwise NULL, in which case appropriate Python
-        /// errors have been set.
-        static CqlListType* FromPython(PyObject* pyCqlType,
-                                       CqlTypeFactory& factory);
+        CqlListType(CqlType* itemType);
 
 
         virtual ~CqlListType();
         virtual PyObject* Deserialize(Buffer& buffer,
                                       int protocolVersion);
     private:
-        CqlTypeReference* _itemType;
+        CqlType* _itemType;
     };
 
 
@@ -270,25 +210,43 @@ namespace pyccassandra
         /// @param itemType Item type. The set type takes over ownership of
         /// the reference, and it should therefore *not* be released by the
         /// caller. This is not enforced, so be wary.
-        CqlSetType(CqlTypeReference* itemType);
-
-
-        /// Set CQL type from Python CQL type.
-
-        /// @param pyCqlType Python CQL type.
-        /// @returns the CQL set type representation for the Python CQL type
-        /// if successful, otherwise NULL, in which case appropriate Python
-        /// errors have been set.
-        static CqlSetType* FromPython(PyObject* pyCqlType,
-                                      CqlTypeFactory& factory);
+        CqlSetType(CqlType* itemType, PyObject* pySetType);
 
 
         virtual ~CqlSetType();
         virtual PyObject* Deserialize(Buffer& buffer,
                                       int protocolVersion);
     private:
-        CqlTypeReference* _itemType;
+        CqlType* _itemType;
         PyObject* _pySetType;
+    };
+
+
+    /// Map CQL type.
+    class CqlMapType
+        :   public CqlType
+    {
+    public:
+        /// Initialize a map CQL type.
+
+        /// @param keyType Key type. The map type takes over ownership of
+        /// the reference, and it should therefore *not* be released by the
+        /// caller. This is not enforced, so be wary.
+        /// @param valueType Value type. The map type takes over ownership of
+        /// the reference, and it should therefore *not* be released by the
+        /// caller. This is not enforced, so be wary.
+        CqlMapType(CqlType* keyType,
+                   CqlType* valueType,
+                   PyObject* pyMapType);
+
+
+        virtual ~CqlMapType();
+        virtual PyObject* Deserialize(Buffer& buffer,
+                                      int protocolVersion);
+    private:
+        CqlType* _keyType;
+        CqlType* _valueType;
+        PyObject* _pyMapType;
     };
 
 

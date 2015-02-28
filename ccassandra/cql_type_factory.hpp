@@ -30,14 +30,60 @@ namespace pyccassandra
         /// @param pyCqlType Python CQL type.
         /// @returns the CQL type representation if possible, otherwise NULL
         /// with the appropriate Python error set.
-        CqlTypeReference* ReferenceFromPython(PyObject* pyCqlType);
+        CqlType* FromPython(PyObject* pyCqlType);
+
+
+        /// Vectorize many CQL types from a list of Python CQL types.
+        bool VectorizeManyFromPython(const std::vector<PyObject*>& pyCqlTypes,
+                                     std::vector<CqlType*>& types);
+
     private:
-        typedef std::map<std::string, CqlType*> SimpleTypeNameMap;
-        
         CqlTypeFactory(const CqlTypeFactory&);
         CqlTypeFactory& operator =(const CqlTypeFactory&);
 
-        SimpleTypeNameMap _simpleTypeNameMap;
+
+        PyObject* _pyUuidUuid;
+        PyObject* _pyDatetimeDatetime;
+        PyObject* _pyDecimalDecimal;
+        PyObject* _pySortedSet;
+        PyObject* _pyOrderedMap;
+
+
+        /// Get a CQL tuple type representation form a Python CQL tuple type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* TupleFromPython(PyObject* pyCqlType);
+
+
+        /// Get a CQL list type representation form a Python CQL list type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* ListFromPython(PyObject* pyCqlType);
+
+
+        /// Get a CQL map type representation form a Python CQL map type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* MapFromPython(PyObject* pyCqlType);
+        
+
+        /// Get a CQL set type representation form a Python CQL set type.
+
+        /// @param pyCqlType Python CQL type.
+        /// @returns the CQL type representation if possible, otherwise NULL
+        /// with the appropriate Python error set.
+        CqlType* SetFromPython(PyObject* pyCqlType);
+
+
+        /// Vectorize CQL subtypes from a Python CQL type.
+        bool VectorizePythonSubtypes(PyObject* pyCqlType,
+                                     std::vector<CqlType*>& types);
     };
 }
 #endif

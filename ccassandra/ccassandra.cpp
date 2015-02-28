@@ -3,6 +3,7 @@
 #include "python.hpp"
 #include "marshal.hpp"
 #include "cql_type_factory.hpp"
+#include "cql_result_row_reader.hpp"
 
 
 using namespace pyccassandra;
@@ -39,17 +40,66 @@ static PyObject* ccassandra_deserialize_cqltype(PyObject*,
         return NULL;
 
     // Get a CQL type implementation.
-    CqlTypeReference* typeRef =
-        cqlTypeFactory->ReferenceFromPython(pyCqlType);
+    CqlType* type = cqlTypeFactory->FromPython(pyCqlType);
 
-    if (!typeRef)
+    if (!type)
         return NULL;
 
     // Deserialize.
     pyccassandra::Buffer buffer(data, Py_ssize_t(dataLength));
-    PyObject* result = typeRef->Get()->Deserialize(buffer, protocolVersion);
-    delete typeRef;
+    PyObject* result = type->Deserialize(buffer, protocolVersion);
+    delete type;
     return result;
+}
+
+
+static PyObject* ccassandra_parse_result_rows(PyObject*,
+                                              PyObject* args,
+                                              PyObject* kwargs)
+{
+    Py_ssize_t dataLength;
+    const unsigned char* data;
+    unsigned long long rowCount;
+    PyObject* pyColumnCqlTypeContainer;
+    int protocolVersion = 3;
+
+    const char* keywords[] =
+    {
+        "data",
+        "row_count",
+        "column_types",
+        "protocol_version",
+        NULL,
+    };
+
+    if (!PyArg_ParseTupleAndKeywords(args,
+                                     kwargs,
+                                     "s#KO|i",
+                                     const_cast<char**>(keywords),
+                                     &data,
+                                     &dataLength,
+                                     &rowCount,
+                                     &pyColumnCqlTypeContainer,
+                                     &protocolVersion))
+        return NULL;
+
+    // Parse the column types.
+    std::vector<PyObject*> pyColumnCqlTypes;
+    if (!VectorizePythonContainer(pyColumnCqlTypeContainer,
+                                  pyColumnCqlTypes))
+        return NULL;
+
+    std::vector<CqlType*> columnCqlTypes;
+    if (!cqlTypeFactory->VectorizeManyFromPython(pyColumnCqlTypes,
+                                                 columnCqlTypes))
+        return NULL;
+
+    // Create the row reader.
+    CqlResultRowReader reader(columnCqlTypes);
+
+    // Deserialize the rows.
+    Buffer rowsBuffer(data, dataLength);
+    return reader.ReadAll(rowsBuffer, rowCount, protocolVersion);
 }
 
 
@@ -60,6 +110,12 @@ static PyMethodDef CcassandraMethods[] =
         (PyCFunction)ccassandra_deserialize_cqltype,
         METH_VARARGS | METH_KEYWORDS,
         "Deserialize a CQL type"
+    },
+    {
+        "parse_result_rows",
+        (PyCFunction)ccassandra_parse_result_rows,
+        METH_VARARGS | METH_KEYWORDS,
+        "Parse result rows"
     },
     {
         NULL,

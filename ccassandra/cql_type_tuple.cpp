@@ -1,31 +1,20 @@
 #include "cql_types.hpp"
 #include "cql_type_factory.hpp"
-#include "cql_type_utils.hpp"
 #include "marshal.hpp"
 
 
 using namespace pyccassandra;
 
 
-CqlTupleType::CqlTupleType(const std::vector<CqlTypeReference*>& subtypes)
+CqlTupleType::CqlTupleType(const std::vector<CqlType*>& subtypes)
     :   _subtypes(subtypes)
 {
     
 }
 
-CqlTupleType* CqlTupleType::FromPython(PyObject* pyCqlType,
-                                       CqlTypeFactory& factory)
-{
-    std::vector<CqlTypeReference*> subtypes;
-    if (!ResolveSubtypes(pyCqlType, factory, subtypes))
-        return NULL;
-
-    return new CqlTupleType(subtypes);
-}
-
 CqlTupleType::~CqlTupleType()
 {
-    std::vector<CqlTypeReference*>::iterator it = _subtypes.begin();
+    std::vector<CqlType*>::iterator it = _subtypes.begin();
 
     while (it != _subtypes.end())
         delete *it++;
@@ -54,29 +43,28 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
         int32_t size = UnpackInt32(sizeData);
 
         // Create a local buffer for the item.
+        PyObject* des;
+        
         if (size < 0)
+            des = _subtypes[i]->Empty();
+        else
         {
-            Py_DECREF(tuple);
-            PyErr_SetString(PyExc_ValueError, "negative item size in tuple");
-            return NULL;
-        }
+            const unsigned char* itemData = buffer.Consume(size);
+            if (!itemData)
+            {
+                Py_DECREF(tuple);
+                PyErr_SetString(PyExc_EOFError,
+                                "unexpected end of buffer while reading tuple");
+                return NULL;
+            }
 
-        const unsigned char* itemData = buffer.Consume(size);
-        if (!itemData)
-        {
-            Py_DECREF(tuple);
-            PyErr_SetString(PyExc_EOFError,
-                            "unexpected end of buffer while reading tuple");
-            return NULL;
-        }
-
-        Buffer itemBuffer(itemData, size);
-        PyObject* des = _subtypes[i]->Get()->Deserialize(itemBuffer,
-                                                         protocolVersion);
-        if (!des)
-        {
-            Py_DECREF(tuple);
-            return NULL;
+            Buffer itemBuffer(itemData, size);
+            des = _subtypes[i]->Deserialize(itemBuffer, protocolVersion);
+            if (!des)
+            {
+                Py_DECREF(tuple);
+                return NULL;
+            }
         }
 
         PyTuple_SetItem(tuple, i, des);
@@ -86,7 +74,10 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
 
     // Backfill with Nones.
     while (missing--)
+    {
+        Py_INCREF(Py_None);
         PyTuple_SetItem(tuple, missing, Py_None);
+    }
 
     return tuple;
 }

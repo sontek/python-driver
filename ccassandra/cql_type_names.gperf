@@ -1,0 +1,32 @@
+%{
+#include <cstring>
+%}
+struct CqlTypeNameIdentification { const char *name; CqlTypeName typeName; }
+%%
+ascii, CqlAsciiTypeName
+boolean, CqlBooleanTypeName
+blob, CqlBlobTypeName
+'org.apache.cassandra.db.marshal.ColumnToCollectionType', CqlColumnToCollectionTypeName
+'org.apache.cassandra.db.marshal.CompositeType', CqlCompositeTypeName
+counter, CqlCounterTypeName
+decimal, CqlDecimalTypeName
+double, CqlDoubleTypeName
+'org.apache.cassandra.db.marshal.DynamicCompositeType', CqlDynamicCompositeTypeName
+float, CqlFloatTypeName
+frozen, CqlFrozenTypeName
+inet, CqlInetTypeName
+int, CqlInt32TypeName
+varint, CqlIntegerTypeName
+list, CqlListTypeName
+bigint, CqlLongTypeName
+map, CqlMapTypeName
+'org.apache.cassandra.db.marshal.ReversedType', CqlReversedTypeTypeName
+set, CqlSetTypeName
+timeuuid, CqlTimeUuidTypeName
+timestamp, CqlTimestampTypeName
+tuple, CqlTupleTypeName
+text, CqlTextTypeName
+uuid, CqlUuidTypeName
+'org.apache.cassandra.db.marshal.UserType', CqlUserTypeTypeName
+varchar, CqlVarcharTypeName
+%%

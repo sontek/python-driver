@@ -126,12 +126,15 @@ libev_ext = Extension('cassandra.io.libevwrapper',
 ccassandra_ext = Extension('ccassandra',
                            sources=[
                                'ccassandra/ccassandra.cpp',
+                               'ccassandra/cql_result_row_reader.cpp',
                                'ccassandra/cql_types.cpp',
-                               'ccassandra/cql_type_utils.cpp',
                                'ccassandra/cql_type_list.cpp',
                                'ccassandra/cql_type_tuple.cpp',
                                'ccassandra/cql_type_set.cpp',
+                               'ccassandra/cql_type_map.cpp',
                                'ccassandra/cql_type_factory.cpp',
+                               'ccassandra/cql_type_names.cpp',
+                               'ccassandra/python.cpp',
                            ])
 
 class build_extensions(build_ext):

@@ -200,7 +200,9 @@ namespace pyccassandra
     /// Unmarshal a boolean value to a Python object.
     inline PyObject* UnmarshalBoolean(const unsigned char* data)
     {
-        return (*data ? Py_True : Py_False);
+        PyObject* result = (*data ? Py_True : Py_False);
+        Py_INCREF(result);
+        return result;
     }
 
 

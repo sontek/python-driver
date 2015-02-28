@@ -19,8 +19,6 @@ if os.path.exists(build_path):
     sys.path.append(build_path)
 
 
-import ccassandra
-
 try:
     import ccassandra
 except ImportError:
