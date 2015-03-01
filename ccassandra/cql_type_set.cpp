@@ -37,7 +37,7 @@ PyObject* CqlSetType::Deserialize(Buffer& buffer, int protocolVersion)
                  UnpackInt16(itemCountData));
 
     // Initialize a tuple to contain the items.
-    PyObject* tuple = PyTuple_New(itemCount);
+    ScopedReference tuple(PyTuple_New(itemCount));
     if (!tuple)
         return NULL;
 
@@ -48,7 +48,6 @@ PyObject* CqlSetType::Deserialize(Buffer& buffer, int protocolVersion)
         const unsigned char* sizeData = buffer.Consume(sizeSize);
         if (!sizeData)
         {
-            Py_DECREF(tuple);
             PyErr_SetString(PyExc_EOFError,
                             "unexpected end of buffer while reading set");
             return NULL;
@@ -68,7 +67,6 @@ PyObject* CqlSetType::Deserialize(Buffer& buffer, int protocolVersion)
             const unsigned char* itemData = buffer.Consume(size);
             if (!itemData)
             {
-                Py_DECREF(tuple);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading set");
                 return NULL;
@@ -77,23 +75,16 @@ PyObject* CqlSetType::Deserialize(Buffer& buffer, int protocolVersion)
             Buffer itemBuffer(itemData, size);
             des = _itemType->Deserialize(itemBuffer, protocolVersion);
             if (!des)
-            {
-                Py_DECREF(tuple);
                 return NULL;
-            }
         }
 
-        PyTuple_SetItem(tuple, i, des);
+        PyTuple_SetItem(tuple.Get(), i, des);
     }
 
     // Construct a set from the tuple.
-    PyObject* set = NULL;
-    PyObject* args = PyTuple_Pack(1, tuple);
-    if (args)
-    {
-        set = PyObject_CallObject(_pySetType, args);
-        Py_DECREF(args);
-    }
+    ScopedReference args(PyTuple_Pack(1, tuple.Get()));
+    if (!args)
+        return NULL;
 
-    return set;
+    return PyObject_CallObject(_pySetType, args.Get());
 }

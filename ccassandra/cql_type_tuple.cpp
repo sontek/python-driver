@@ -27,7 +27,7 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
         protocolVersion = 3;
 
     // Initialize a tuple.
-    PyObject* tuple = PyTuple_New(_subtypes.size());
+    ScopedReference tuple(PyTuple_New(_subtypes.size()));
     if (!tuple)
         return NULL;
 
@@ -44,7 +44,7 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
 
         // Create a local buffer for the item.
         PyObject* des;
-        
+
         if (size < 0)
             des = _subtypes[i]->Empty();
         else
@@ -52,7 +52,6 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
             const unsigned char* itemData = buffer.Consume(size);
             if (!itemData)
             {
-                Py_DECREF(tuple);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading tuple");
                 return NULL;
@@ -61,13 +60,10 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
             Buffer itemBuffer(itemData, size);
             des = _subtypes[i]->Deserialize(itemBuffer, protocolVersion);
             if (!des)
-            {
-                Py_DECREF(tuple);
                 return NULL;
-            }
         }
 
-        PyTuple_SetItem(tuple, i, des);
+        PyTuple_SetItem(tuple.Get(), i, des);
 
         --missing;
     }
@@ -76,8 +72,8 @@ PyObject* CqlTupleType::Deserialize(Buffer& buffer, int protocolVersion)
     while (missing--)
     {
         Py_INCREF(Py_None);
-        PyTuple_SetItem(tuple, missing, Py_None);
+        PyTuple_SetItem(tuple.Get(), missing, Py_None);
     }
 
-    return tuple;
+    return tuple.Steal();
 }

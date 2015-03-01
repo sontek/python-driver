@@ -343,8 +343,8 @@ namespace pyccassandra
 
 
         NamesAndTypeVector _namesAndTypes;
-        PyObject* _pyMappedClass;
-        PyObject* _pyTupleType;
+        ScopedReference _pyMappedClass;
+        ScopedReference _pyTupleType;
     };
 
 

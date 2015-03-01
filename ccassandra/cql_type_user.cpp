@@ -25,20 +25,14 @@ CqlUserType::~CqlUserType()
         delete it->second;
         ++it;
     }
-
-    if (_pyMappedClass)
-        Py_DECREF(_pyMappedClass);
-    if (_pyTupleType)
-        Py_DECREF(_pyTupleType);
 }
 
 PyObject* CqlUserType::DeserializeToTuple(Buffer& buffer, int protocolVersion)
 {
     // Initialize a tuple.
-    PyObject* tuple = PyTuple_New(_namesAndTypes.size());
+    ScopedReference tuple(PyTuple_New(_namesAndTypes.size()));
     if (!tuple)
         return NULL;
-    ScopedReference tupleRef(tuple);
 
     // Drain as many items from the buffer as possible.
     std::size_t missing = _namesAndTypes.size();
@@ -53,7 +47,7 @@ PyObject* CqlUserType::DeserializeToTuple(Buffer& buffer, int protocolVersion)
 
         // Create a local buffer for the item.
         PyObject* des;
-        
+
         if (size < 0)
             des = _namesAndTypes[i].second->Empty();
         else
@@ -73,7 +67,7 @@ PyObject* CqlUserType::DeserializeToTuple(Buffer& buffer, int protocolVersion)
                 return NULL;
         }
 
-        PyTuple_SetItem(tuple, i, des);
+        PyTuple_SetItem(tuple.Get(), i, des);
 
         --missing;
     }
@@ -82,19 +76,18 @@ PyObject* CqlUserType::DeserializeToTuple(Buffer& buffer, int protocolVersion)
     while (missing--)
     {
         Py_INCREF(Py_None);
-        PyTuple_SetItem(tuple, missing, Py_None);
+        PyTuple_SetItem(tuple.Get(), missing, Py_None);
     }
 
-    return PyObject_CallObject(_pyTupleType, tuple);
+    return PyObject_CallObject(_pyTupleType.Get(), tuple.Get());
 }
 
 PyObject* CqlUserType::DeserializeToMappedClass(Buffer& buffer, int protocolVersion)
 {
     // Initialize a dict.
-    PyObject* dict = PyDict_New();
+    ScopedReference dict(PyDict_New());
     if (!dict)
         return NULL;
-    ScopedReference dictRef(dict);
 
     // Drain as many items from the buffer as possible.
     NamesAndTypeVector::iterator it = _namesAndTypes.begin();
@@ -108,7 +101,7 @@ PyObject* CqlUserType::DeserializeToMappedClass(Buffer& buffer, int protocolVers
         int32_t size = UnpackInt32(sizeData);
 
         // Create a local buffer for the item.
-        PyObject* des;
+        ScopedReference des;
         
         if (size < 0)
             des = it->second->Empty();
@@ -128,22 +121,26 @@ PyObject* CqlUserType::DeserializeToMappedClass(Buffer& buffer, int protocolVers
                 return NULL;
         }
 
-        PyDict_SetItemString(dict, it->first.c_str(), des);
+        if (PyDict_SetItemString(dict.Get(), it->first.c_str(), des.Get()))
+            return NULL;
+
         ++it;
     }
 
     // Backfill with Nones.
     while (it != _namesAndTypes.end())
     {
+        if (PyDict_SetItemString(dict.Get(), it->first.c_str(), Py_None))
+            return NULL;
+
         Py_INCREF(Py_None);
-        PyDict_SetItemString(dict, it->first.c_str(), Py_None);
+
         ++it;
     }
 
-    PyObject* emptyTuple = PyTuple_New(0);
-    ScopedReference emptyTupleRef(emptyTuple);
+    ScopedReference emptyTuple(PyTuple_New(0));
 
-    return PyObject_Call(_pyMappedClass, emptyTuple, dict);
+    return PyObject_Call(_pyMappedClass.Get(), emptyTuple.Get(), dict.Get());
 }
 
 PyObject* CqlUserType::Deserialize(Buffer& buffer, int protocolVersion)

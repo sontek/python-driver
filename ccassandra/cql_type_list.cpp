@@ -36,7 +36,7 @@ PyObject* CqlListType::Deserialize(Buffer& buffer, int protocolVersion)
                  UnpackInt16(itemCountData));
 
     // Initialize a list.
-    PyObject* list = PyList_New(itemCount);
+    ScopedReference list(PyList_New(itemCount));
     if (!list)
         return NULL;
 
@@ -47,7 +47,6 @@ PyObject* CqlListType::Deserialize(Buffer& buffer, int protocolVersion)
         const unsigned char* sizeData = buffer.Consume(sizeSize);
         if (!sizeData)
         {
-            Py_DECREF(list);
             PyErr_SetString(PyExc_EOFError,
                             "unexpected end of buffer while reading list");
             return NULL;
@@ -67,7 +66,6 @@ PyObject* CqlListType::Deserialize(Buffer& buffer, int protocolVersion)
             const unsigned char* itemData = buffer.Consume(size);
             if (!itemData)
             {
-                Py_DECREF(list);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading list");
                 return NULL;
@@ -76,14 +74,11 @@ PyObject* CqlListType::Deserialize(Buffer& buffer, int protocolVersion)
             Buffer itemBuffer(itemData, size);
             des = _itemType->Deserialize(itemBuffer, protocolVersion);
             if (!des)
-            {
-                Py_DECREF(list);
                 return NULL;
-            }
         }
 
-        PyList_SetItem(list, i, des);
+        PyList_SetItem(list.Get(), i, des);
     }
 
-    return list;
+    return list.Steal();
 }

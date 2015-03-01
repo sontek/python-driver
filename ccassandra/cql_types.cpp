@@ -66,7 +66,6 @@ PyObject* CqlBytesType::Deserialize(Buffer& buffer, int)
                                       Py_ssize_t(size));
 }
 
-
 PyObject* CqlUtf8Type::Deserialize(Buffer& buffer, int)
 {
     const std::size_t size = buffer.Residual();
@@ -74,17 +73,12 @@ PyObject* CqlUtf8Type::Deserialize(Buffer& buffer, int)
                         (const char*)(buffer.Consume(size)) :
                         "");
 
-    PyObject* str = PyString_FromStringAndSize(data, Py_ssize_t(size));
+    ScopedReference str(PyString_FromStringAndSize(data, Py_ssize_t(size)));
     if (!str)
         return NULL;
 
-    PyObject* dec = PyString_AsDecodedObject(str, "utf-8", "strict");
-
-    Py_DECREF(str);
-
-    return dec;
+    return PyString_AsDecodedObject(str.Get(), "utf-8", "strict");
 }
-
 
 PyObject* CqlUuidType::Deserialize(Buffer& buffer, int)
 {
@@ -93,23 +87,16 @@ PyObject* CqlUuidType::Deserialize(Buffer& buffer, int)
                         (const char*)(buffer.Consume(size)) :
                         "");
 
-    PyObject* str = PyString_FromStringAndSize(data, Py_ssize_t(size));
+    ScopedReference str(PyString_FromStringAndSize(data, Py_ssize_t(size)));
     if (!str)
         return NULL;
 
-    PyObject* uuid = NULL;
-    PyObject* args = PyTuple_Pack(2, Py_None, str);
-    if (args)
-    {
-        uuid = PyObject_CallObject(_pythonUuidType, args);
-        Py_DECREF(args);
-    }
+    ScopedReference args(PyTuple_Pack(2, Py_None, str.Get()));
+    if (!args)
+        return NULL;
 
-    Py_DECREF(str);
-
-    return uuid;
+    return PyObject_CallObject(_pythonUuidType, args.Get());
 }
-
 
 PyObject* CqlInetAddressType::Deserialize(Buffer& buffer, int)
 {
@@ -138,7 +125,6 @@ PyObject* CqlInetAddressType::Deserialize(Buffer& buffer, int)
     return PyString_FromString(presentation);
 }
 
-
 PyObject* CqlDateType::Deserialize(Buffer& buffer, int)
 {
     const unsigned char* data = buffer.Consume(8);
@@ -151,21 +137,17 @@ PyObject* CqlDateType::Deserialize(Buffer& buffer, int)
 
     int64_t timestampMs = UnpackInt64(data);
 
-    PyObject* pyTimestamp = PyFloat_FromDouble(double(timestampMs) / 1000.0);
+    ScopedReference pyTimestamp(PyFloat_FromDouble(double(timestampMs) /
+                                                   1000.0));
     if (!pyTimestamp)
         return NULL;
 
-    PyObject* date = NULL;
-    PyObject* args = PyTuple_Pack(1, pyTimestamp);
-    if (args)
-    {
-        date = PyObject_CallObject(_pyDatetimeDatetimeUtcFromTimestamp, args);
-        Py_DECREF(args);
-    }
+    ScopedReference args(PyTuple_Pack(1, pyTimestamp.Get()));
+    if (!args)
+        return NULL;
 
-    Py_DECREF(pyTimestamp);
-
-    return date;
+    return PyObject_CallObject(_pyDatetimeDatetimeUtcFromTimestamp,
+                               args.Get());
 }
 
 
@@ -178,8 +160,6 @@ PyObject* CqlIntegerType::Deserialize(Buffer& buffer, int)
 
 PyObject* CqlDecimalType::Deserialize(Buffer& buffer, int)
 {
-    PyObject* result = NULL;
-    
     // Deserialize the scale.
     const unsigned char* scaleData = buffer.Consume(4);
     if (!scaleData)
@@ -191,48 +171,35 @@ PyObject* CqlDecimalType::Deserialize(Buffer& buffer, int)
     }
     int32_t negativeScale = UnpackInt32(scaleData);
 
-    PyObject* scale = PyInt_FromLong(-negativeScale);
-    if (scale)
-    {
-        // Deserialize the unscaled value.
-        const std::size_t size = buffer.Residual();
-        PyObject* unscaled = UnmarshalVarint(buffer.Consume(size), size);
-        if (unscaled)
-        {
-            // Format the string representation of the decimal number.
-            PyObject* format = PyString_FromString("%de%d");
-            if (format)
-            {
-                PyObject* formatArgs = PyTuple_Pack(2, unscaled, scale);
-                if (formatArgs)
-                {
-                    PyObject* stringRepr = PyString_Format(format, formatArgs);
-                    if (stringRepr)
-                    {
-                        PyObject* args = PyTuple_Pack(1, stringRepr);
-                        if (args)
-                        {
-                            result = PyObject_CallObject(_pythonDecimalType,
-                                                         args);
-                            Py_DECREF(args);
-                        }
+    ScopedReference scale(PyInt_FromLong(-negativeScale));
+    if (!scale)
+        return NULL;
 
-                        Py_DECREF(stringRepr);
-                    }
+    // Deserialize the unscaled value.
+    const std::size_t size = buffer.Residual();
+    ScopedReference unscaled(UnmarshalVarint(buffer.Consume(size), size));
+    if (!unscaled)
+        return NULL;
 
-                    Py_DECREF(formatArgs);
-                }
-                
-                Py_DECREF(format);
-            }
+    // Format the string representation of the decimal number.
+    ScopedReference format(PyString_FromString("%de%d"));
+    if (!format)
+        return NULL;
 
-            Py_DECREF(unscaled);
-        }
+    ScopedReference formatArgs(PyTuple_Pack(2, unscaled.Get(), scale.Get()));
+    if (!formatArgs)
+        return NULL;
 
-        Py_DECREF(scale);
-    }
+    ScopedReference stringRepr(PyString_Format(format.Get(),
+                                               formatArgs.Get()));
+    if (!stringRepr)
+        return NULL;
 
-    return result;
+    ScopedReference args(PyTuple_Pack(1, stringRepr.Get()));
+    if (!args)
+        return NULL;
+
+    return PyObject_CallObject(_pythonDecimalType, args.Get());
 }
 
 CqlProxyType::CqlProxyType(CqlType* wrappedType)

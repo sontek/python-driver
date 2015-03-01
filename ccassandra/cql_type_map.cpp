@@ -42,7 +42,7 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
                  UnpackInt16(itemCountData));
 
     // Initialize a tuple to contain the items.
-    PyObject* tuple = PyTuple_New(itemCount);
+    ScopedReference tuple(PyTuple_New(itemCount));
     if (!tuple)
         return NULL;
 
@@ -55,7 +55,6 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
 
         if (!sizeData)
         {
-            Py_DECREF(tuple);
             PyErr_SetString(PyExc_EOFError,
                             "unexpected end of buffer while reading map "
                             "key size");
@@ -66,7 +65,7 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
                         UnpackInt32(sizeData) :
                         UnpackInt16(sizeData));
 
-        PyObject* key;
+        ScopedReference key;
 
         if (size < 0)
             key = _keyType->Empty();
@@ -76,7 +75,6 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             itemData = buffer.Consume(size);
             if (!itemData)
             {
-                Py_DECREF(tuple);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading map "
                                 "key data");
@@ -86,18 +84,13 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             Buffer keyBuffer(itemData, size);
             key = _keyType->Deserialize(keyBuffer, protocolVersion);
             if (!key)
-            {
-                Py_DECREF(tuple);
                 return NULL;
-            }
         }
 
         // Read the size of the value.
         sizeData = buffer.Consume(sizeSize);
         if (!sizeData)
         {
-            Py_DECREF(tuple);
-            Py_DECREF(key);
             PyErr_SetString(PyExc_EOFError,
                             "unexpected end of buffer while reading map "
                             "value size");
@@ -108,7 +101,7 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
                 UnpackInt32(sizeData) :
                 UnpackInt16(sizeData));
 
-        PyObject* value;
+        ScopedReference value;
 
         if (size < 0)
             value = _valueType->Empty();
@@ -118,8 +111,6 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             itemData = buffer.Consume(size);
             if (!itemData)
             {
-                Py_DECREF(tuple);
-                Py_DECREF(key);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading map "
                                 "value");
@@ -129,34 +120,21 @@ PyObject* CqlMapType::Deserialize(Buffer& buffer, int protocolVersion)
             Buffer valueBuffer(itemData, size);
             value = _valueType->Deserialize(valueBuffer, protocolVersion);
             if (!value)
-            {
-                Py_DECREF(tuple);
-                Py_DECREF(key);
                 return NULL;
-            }
         }
 
-        PyObject* pair = PyTuple_Pack(2, key, value);
+        PyObject* pair = PyTuple_Pack(2, key.Get(), value.Get());
 
         if (!pair)
-        {
-            Py_DECREF(key);
-            Py_DECREF(value);
-            Py_DECREF(tuple);
             return NULL;
-        }
 
-        PyTuple_SetItem(tuple, i, pair);
+        PyTuple_SetItem(tuple.Get(), i, pair);
     }
 
     // Construct a map from the tuple.
-    PyObject* map = NULL;
-    PyObject* args = PyTuple_Pack(1, tuple);
-    if (args)
-    {
-        map = PyObject_CallObject(_pyMapType, args);
-        Py_DECREF(args);
-    }
+    ScopedReference args(PyTuple_Pack(1, tuple.Get()));
+    if (!args)
+        return NULL;
 
-    return map;
+    return PyObject_CallObject(_pyMapType, args.Get());
 }

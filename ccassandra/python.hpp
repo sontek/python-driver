@@ -28,10 +28,19 @@ namespace pyccassandra
     class ScopedReference
     {
     public:
-        ScopedReference(PyObject* obj)
+        ScopedReference(PyObject* obj = NULL)
             :   _obj(obj)
         {
         }
+
+
+        void operator =(PyObject* obj)
+        {
+            if (_obj)
+                Py_DECREF(_obj);
+            _obj = obj;
+        }
+
 
         ~ScopedReference()
         {
@@ -40,10 +49,25 @@ namespace pyccassandra
         }
 
 
-        /// Steal the reference.
-        void Steal()
+        /// Object.
+        inline PyObject* Get() const
         {
+            return _obj;
+        }
+
+
+        /// Steal the reference.
+        PyObject* Steal()
+        {
+            PyObject* obj = _obj;
             _obj = NULL;
+            return obj;
+        }
+
+
+        operator bool() const
+        {
+            return _obj;
         }
     private:
         PyObject* _obj;

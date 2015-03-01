@@ -5,6 +5,11 @@ except ImportError:
 
 from .loading import ccassandra
 
+try:
+    import gc
+except ImportError:
+    gc = None
+
 import platform
 import six
 from datetime import datetime
@@ -204,6 +209,9 @@ if ccassandra:
                     self.fail('Deserialization for %s (%s) using protocol %d '
                               'failed with exception %s: %s' %
                               (cql_type_name, cql_type, protocol, type(e), e))
+
+                if gc:
+                    gc.collect()
 
                 self.assertEqual(
                     expected,
