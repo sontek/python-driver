@@ -3,7 +3,7 @@ try:
 except ImportError:
     import unittest  # noqa
 
-from .loading import ccassandra
+from cassandra.dependencies import ccassandra
 
 try:
     import gc

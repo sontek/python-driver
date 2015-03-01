@@ -5,9 +5,7 @@ import os
 
 
 build_path = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__)
-    )))),
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     'build',
     'lib.{platform}-{version[0]}.{version[1]}'.format(
         platform=sysconfig.get_platform(),
