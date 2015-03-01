@@ -57,24 +57,18 @@ CqlTypeFactory::CqlTypeFactory()
 CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
 {
     // Get the type name identifier from the type.
-    PyObject* pyTypeName = PyObject_GetAttrString(pyCqlType, "typename");
+    ScopedReference pyTypeName(PyObject_GetAttrString(pyCqlType, "typename"));
     if (!pyTypeName)
     {
         PyErr_SetString(PyExc_TypeError, "provided type is not a CQL type");
         return NULL;
     }
 
-    const char* cTypeName = PyString_AsString(pyTypeName);
+    const char* cTypeName = PyString_AsString(pyTypeName.Get());
     if (!cTypeName)
-    {
-        Py_DECREF(pyTypeName);
         return NULL;
-    }
 
-    std::string typeNameString(cTypeName);
     CqlTypeName typeName = CqlTypeNameFromString(cTypeName);
-
-    Py_DECREF(pyTypeName);
 
     // Resolve depending on type name.
     switch (typeName)
@@ -141,7 +135,7 @@ CqlType* CqlTypeFactory::FromPython(PyObject* pyCqlType)
     // If not, we cannot handle this type.
     PyErr_Format(PyExc_NotImplementedError,
                  "unsupported CQL type: %s",
-                 typeNameString.c_str());
+                 cTypeName);
     return NULL;
 }
 
@@ -235,23 +229,18 @@ bool CqlTypeFactory::VectorizePythonSubtypes(
 )
 {
     // Attempt to resolve the subtypes.
-    PyObject* pySubtypeList = PyObject_GetAttrString(pyCqlType, "subtypes");
+    ScopedReference pySubtypeList(PyObject_GetAttrString(pyCqlType, "subtypes"));
     if (!pySubtypeList)
         return false;
 
     // Vectorize the subtype list.
     std::vector<PyObject*> pyCqlTypes;
 
-    if (!VectorizePythonContainer(pySubtypeList, pyCqlTypes))
-    {
-        Py_DECREF(pySubtypeList);
+    if (!VectorizePythonContainer(pySubtypeList.Get(), pyCqlTypes))
         return false;
-    }
 
     // Vectorize the types.
-    bool result = VectorizeManyFromPython(pyCqlTypes, types);
-    Py_DECREF(pySubtypeList);
-    return result;
+    return VectorizeManyFromPython(pyCqlTypes, types);
 }
 
 CqlType* CqlTypeFactory::FrozenFromPython(PyObject* pyCqlType)
@@ -291,25 +280,17 @@ CqlType* CqlTypeFactory::ReversedFromPython(PyObject* pyCqlType)
 CqlType* CqlTypeFactory::UserTypeFromPython(PyObject* pyCqlType)
 {
     // Attempt to resolved the mapped class and tuple type.
-    PyObject* pyMappedClass = PyObject_GetAttrString(pyCqlType, "mapped_class");
+    ScopedReference pyMappedClass(PyObject_GetAttrString(pyCqlType,
+                                                         "mapped_class"));
 
-    if ((pyMappedClass) && (pyMappedClass == Py_None))
-    {
-        Py_DECREF(pyMappedClass);
+    if ((pyMappedClass) && (pyMappedClass.Get() == Py_None))
         pyMappedClass = NULL;
-    }
 
-    ScopedReference pyMappedClassRef(pyMappedClass);
+    ScopedReference pyTupleType(PyObject_GetAttrString(pyCqlType,
+                                                       "tuple_type"));
 
-    PyObject* pyTupleType = PyObject_GetAttrString(pyCqlType, "tuple_type");
-    
-    if ((pyTupleType) && (pyTupleType == Py_None))
-    {
-        Py_DECREF(pyTupleType);
+    if ((pyTupleType) && (pyTupleType.Get() == Py_None))
         pyTupleType = NULL;
-    }
-
-    ScopedReference pyTupleTypeRef(pyTupleType);
 
     if ((!pyMappedClass) && (!pyTupleType))
     {
@@ -320,17 +301,17 @@ CqlType* CqlTypeFactory::UserTypeFromPython(PyObject* pyCqlType)
     }
 
     // Attempt to resolve the field names.
-    PyObject* pyFieldNamesList = PyObject_GetAttrString(pyCqlType, "fieldnames");
+    ScopedReference pyFieldNamesList(PyObject_GetAttrString(pyCqlType,
+                                                            "fieldnames"));
     if (!pyFieldNamesList)
     {
         PyErr_SetString(PyExc_TypeError,
                         "provided type is not a correct CQL user type");
         return NULL;
     }
-    ScopedReference pyFieldNamesListRef(pyFieldNamesList);
 
     std::vector<PyObject*> pyFieldNames;
-    if (!VectorizePythonContainer(pyFieldNamesList, pyFieldNames))
+    if (!VectorizePythonContainer(pyFieldNamesList.Get(), pyFieldNames))
         return NULL;
 
     std::vector<std::string> fieldNames;
@@ -372,10 +353,7 @@ CqlType* CqlTypeFactory::UserTypeFromPython(PyObject* pyCqlType)
         namesAndTypes.push_back(std::pair<std::string, CqlType*>(fieldNames[i],
                                                                  subtypes[i]));
 
-    pyMappedClassRef.Steal();
-    pyTupleTypeRef.Steal();
-
     return new CqlUserType(namesAndTypes,
-                           pyMappedClass,
-                           pyTupleType);
+                           pyMappedClass.Steal(),
+                           pyTupleType.Steal());
 }

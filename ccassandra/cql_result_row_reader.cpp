@@ -23,13 +23,15 @@ PyObject* CqlResultRowReader::ReadAll(Buffer& buffer,
                                       int protocolVersion)
 {
     // Initialize the row list.
-    PyObject* rows = PyList_New(Py_ssize_t(rowCount));
+    ScopedReference rows(PyList_New(Py_ssize_t(rowCount)));
     if (!rows)
         return NULL;
 
     for (std::size_t i = 0; i < rowCount; ++i)
     {
-        PyObject* row = PyTuple_New(_columnTypes.size());
+        ScopedReference row(PyTuple_New(_columnTypes.size()));
+        if (!row)
+            return NULL;
 
         for (std::size_t j = 0; j < _columnTypes.size(); ++j)
         {
@@ -37,8 +39,6 @@ PyObject* CqlResultRowReader::ReadAll(Buffer& buffer,
             const unsigned char* sizeData = buffer.Consume(4);
             if (!sizeData)
             {
-                Py_DECREF(row);
-                Py_DECREF(rows);
                 PyErr_SetString(PyExc_EOFError,
                                 "unexpected end of buffer while reading row");
                 return NULL;
@@ -55,8 +55,6 @@ PyObject* CqlResultRowReader::ReadAll(Buffer& buffer,
                 const unsigned char* itemData = buffer.Consume(size);
                 if (!itemData)
                 {
-                    Py_DECREF(row);
-                    Py_DECREF(rows);
                     PyErr_SetString(PyExc_EOFError,
                                     "unexpected end of buffer while "
                                     "reading row");
@@ -64,22 +62,16 @@ PyObject* CqlResultRowReader::ReadAll(Buffer& buffer,
                 }
 
                 Buffer itemBuffer(itemData, size);
-                des = _columnTypes[j]->Deserialize(itemBuffer,
-                                                   protocolVersion);
+                if (!(des = _columnTypes[j]->Deserialize(itemBuffer,
+                                                         protocolVersion)))
+                    return NULL;
             }
 
-            if (!des)
-            {
-                Py_DECREF(row);
-                Py_DECREF(rows);
-                return NULL;
-            }
-
-            PyTuple_SetItem(row, j, des);
+            PyTuple_SetItem(row.Get(), j, des);
         }
 
-        PyList_SetItem(rows, i, row);
+        PyList_SetItem(rows.Get(), i, row.Steal());
     }
 
-    return rows;
+    return rows.Steal();
 }
