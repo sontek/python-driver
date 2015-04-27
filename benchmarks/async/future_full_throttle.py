@@ -14,7 +14,7 @@
 
 import logging
 
-from base import benchmark, BenchmarkThread
+from benchmarks.async.base import benchmark, BenchmarkThread
 
 log = logging.getLogger(__name__)
 

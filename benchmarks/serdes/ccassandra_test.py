@@ -11,36 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import io
 
-import logging
+
 from base import benchmark, BenchmarkThread
-from six.moves import queue
-
-log = logging.getLogger(__name__)
+from cassandra.protocol import ResultMessage
 
 
 class Runner(BenchmarkThread):
 
     def run(self):
-        futures = queue.Queue(maxsize=121)
-
         self.start_profile()
 
-        for i in range(self.num_queries):
-            if i >= 120:
-                old_future = futures.get_nowait()
-                old_future.result()
-
-            future = self.session.execute_async(self.query, self.values)
-            futures.put_nowait(future)
-
-        while True:
-            try:
-                futures.get_nowait().result()
-            except queue.Empty:
-                break
-
-        self.finish_profile
+        for _ in xrange(self.num_ops):
+            f = io.BytesIO(self.row_data)
+            ResultMessage.recv_results_rows(f, *self.recv_rows_args,
+                                            **self.recv_rows_kwargs)
+        self.finish_profile()
 
 
 if __name__ == "__main__":

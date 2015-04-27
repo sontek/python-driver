@@ -46,6 +46,10 @@ class NotSupportedError(Exception):
 class InternalError(Exception):
     pass
 
+try:
+    from cassandra.dependencies import native_row_parser as default_row_parser
+except ImportError:
+    from cassandra.dependencies import python_row_parser as default_row_parser
 
 HEADER_DIRECTION_FROM_CLIENT = 0x00
 HEADER_DIRECTION_TO_CLIENT = 0x80
@@ -567,14 +571,13 @@ class ResultMessage(_MessageType):
     @classmethod
     def recv_results_rows(cls, f, protocol_version, user_type_map):
         paging_state, column_metadata = cls.recv_results_metadata(f, user_type_map)
-        rowcount = read_int(f)
-        rows = [cls.recv_row(f, len(column_metadata)) for _ in range(rowcount)]
         colnames = [c[2] for c in column_metadata]
         coltypes = [c[3] for c in column_metadata]
-        parsed_rows = [
-            tuple(ctype.from_binary(val, protocol_version)
-                  for ctype, val in zip(coltypes, row))
-            for row in rows]
+
+        rowcount = read_int(f)
+        parsed_rows = default_row_parser(rowcount, f, protocol_version,
+                                         coltypes)
+
         return (paging_state, (colnames, parsed_rows))
 
     @classmethod
@@ -645,11 +648,6 @@ class ResultMessage(_MessageType):
             typeclass = lookup_casstype(classname)
 
         return typeclass
-
-    @staticmethod
-    def recv_row(f, colcount):
-        return [read_value(f) for _ in range(colcount)]
-
 
 class PrepareMessage(_MessageType):
     opcode = 0x09
@@ -953,7 +951,6 @@ def write_stringmultimap(f, strmmap):
     for k, v in strmmap.items():
         write_string(f, k)
         write_stringlist(f, v)
-
 
 def read_value(f):
     size = read_int(f)
