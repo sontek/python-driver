@@ -4,6 +4,9 @@ import sysconfig
 import os
 import logging
 
+import warnings
+
+
 log = logging.getLogger(__name__)
 
 build_path = os.path.join(
@@ -27,9 +30,8 @@ try:
                                             column_types=coltypes,
                                             row_count=rowcount,
                                             protocol_version=protocol_version)
-    log.warn("Using C-optimized deserialization")
 except ImportError:
-    log.warn("Using pure python deserialization")
+    warnings.warn("Using pure python deserialization")
 
     def python_row_parser(rowcount, f, protocol_version, coltypes):
         from cassandra.protocol import read_value
