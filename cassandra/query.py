@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import time
 import six
 
 from cassandra import ConsistencyLevel, OperationTimedOut
-from cassandra.cqltypes import unix_time_from_uuid1
+from cassandra.util import unix_time_from_uuid1
 from cassandra.encoder import Encoder
 import cassandra.encoder
 from cassandra.util import OrderedDict
@@ -248,6 +248,7 @@ class Statement(object):
             raise ValueError(
                 "serial_consistency_level must be either ConsistencyLevel.SERIAL "
                 "or ConsistencyLevel.LOCAL_SERIAL")
+        self._serial_consistency_level = serial_consistency_level
 
     def _del_serial_consistency_level(self):
         self._serial_consistency_level = None

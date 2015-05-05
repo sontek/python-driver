@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,6 +52,8 @@ class QueryTests(unittest.TestCase):
         session.execute(bound)
         self.assertEqual(bound.routing_key, b'\x00\x00\x00\x01')
 
+        cluster.shutdown()
+
     def test_trace_prints_okay(self):
         """
         Code coverage to ensure trace prints to string without error
@@ -69,6 +71,8 @@ class QueryTests(unittest.TestCase):
         for event in statement.trace.events:
             str(event)
 
+        cluster.shutdown()
+
     def test_trace_ignores_row_factory(self):
         cluster = Cluster(protocol_version=PROTOCOL_VERSION)
         session = cluster.connect()
@@ -83,18 +87,23 @@ class QueryTests(unittest.TestCase):
         for event in statement.trace.events:
             str(event)
 
+        cluster.shutdown()
+
 
 class PreparedStatementTests(unittest.TestCase):
+
+    def setUp(self):
+        self.cluster = Cluster(protocol_version=PROTOCOL_VERSION)
+        self.session = self.cluster.connect()
+
+    def tearDown(self):
+        self.cluster.shutdown()
 
     def test_routing_key(self):
         """
         Simple code coverage to ensure routing_keys can be accessed
         """
-
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-
-        prepared = session.prepare(
+        prepared = self.session.prepare(
             """
             INSERT INTO test3rf.test (k, v) VALUES  (?, ?)
             """)
@@ -108,11 +117,7 @@ class PreparedStatementTests(unittest.TestCase):
         Ensure when routing_key_indexes are blank,
         the routing key should be None
         """
-
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-
-        prepared = session.prepare(
+        prepared = self.session.prepare(
             """
             INSERT INTO test3rf.test (k, v) VALUES  (?, ?)
             """)
@@ -127,11 +132,7 @@ class PreparedStatementTests(unittest.TestCase):
         Basic test that ensures _set_routing_key()
         overrides the current routing key
         """
-
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-
-        prepared = session.prepare(
+        prepared = self.session.prepare(
             """
             INSERT INTO test3rf.test (k, v) VALUES  (?, ?)
             """)
@@ -145,11 +146,7 @@ class PreparedStatementTests(unittest.TestCase):
         """
         Basic test that uses a fake routing_key_index
         """
-
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-
-        prepared = session.prepare(
+        prepared = self.session.prepare(
             """
             INSERT INTO test3rf.test (k, v) VALUES  (?, ?)
             """)
@@ -167,11 +164,7 @@ class PreparedStatementTests(unittest.TestCase):
         """
         Ensure that bound.keyspace works as expected
         """
-
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-
-        prepared = session.prepare(
+        prepared = self.session.prepare(
             """
             INSERT INTO test3rf.test (k, v) VALUES  (?, ?)
             """)
@@ -212,6 +205,8 @@ class PrintStatementTests(unittest.TestCase):
         bound = prepared.bind((1, 2))
         self.assertEqual(str(bound),
                          '<BoundStatement query="INSERT INTO test3rf.test (k, v) VALUES (?, ?)", values=(1, 2), consistency=ONE>')
+
+        cluster.shutdown()
 
 
 class BatchStatementTests(unittest.TestCase):
@@ -322,19 +317,30 @@ class SerialConsistencyTests(unittest.TestCase):
             self.cluster.set_core_connections_per_host(HostDistance.LOCAL, 1)
         self.session = self.cluster.connect()
 
+    def tearDown(self):
+        self.cluster.shutdown()
+
     def test_conditional_update(self):
         self.session.execute("INSERT INTO test3rf.test (k, v) VALUES (0, 0)")
         statement = SimpleStatement(
             "UPDATE test3rf.test SET v=1 WHERE k=0 IF v=1",
             serial_consistency_level=ConsistencyLevel.SERIAL)
-        result = self.session.execute(statement)
+        # crazy test, but PYTHON-299
+        # TODO: expand to check more parameters get passed to statement, and on to messages
+        self.assertEqual(statement.serial_consistency_level, ConsistencyLevel.SERIAL)
+        future = self.session.execute_async(statement)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.SERIAL)
         self.assertEqual(1, len(result))
         self.assertFalse(result[0].applied)
 
         statement = SimpleStatement(
             "UPDATE test3rf.test SET v=1 WHERE k=0 IF v=0",
-            serial_consistency_level=ConsistencyLevel.SERIAL)
-        result = self.session.execute(statement)
+            serial_consistency_level=ConsistencyLevel.LOCAL_SERIAL)
+        self.assertEqual(statement.serial_consistency_level, ConsistencyLevel.LOCAL_SERIAL)
+        future = self.session.execute_async(statement)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.LOCAL_SERIAL)
         self.assertEqual(1, len(result))
         self.assertTrue(result[0].applied)
 
@@ -344,15 +350,39 @@ class SerialConsistencyTests(unittest.TestCase):
             "UPDATE test3rf.test SET v=1 WHERE k=0 IF v=2")
 
         statement.serial_consistency_level = ConsistencyLevel.SERIAL
-        result = self.session.execute(statement)
+        future = self.session.execute_async(statement)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.SERIAL)
         self.assertEqual(1, len(result))
         self.assertFalse(result[0].applied)
 
         statement = self.session.prepare(
             "UPDATE test3rf.test SET v=1 WHERE k=0 IF v=0")
         bound = statement.bind(())
-        bound.serial_consistency_level = ConsistencyLevel.SERIAL
-        result = self.session.execute(statement)
+        bound.serial_consistency_level = ConsistencyLevel.LOCAL_SERIAL
+        future = self.session.execute_async(bound)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.LOCAL_SERIAL)
+        self.assertEqual(1, len(result))
+        self.assertTrue(result[0].applied)
+
+    def test_conditional_update_with_batch_statements(self):
+        self.session.execute("INSERT INTO test3rf.test (k, v) VALUES (0, 0)")
+        statement = BatchStatement(serial_consistency_level=ConsistencyLevel.SERIAL)
+        statement.add("UPDATE test3rf.test SET v=1 WHERE k=0 IF v=1")
+        self.assertEqual(statement.serial_consistency_level, ConsistencyLevel.SERIAL)
+        future = self.session.execute_async(statement)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.SERIAL)
+        self.assertEqual(1, len(result))
+        self.assertFalse(result[0].applied)
+
+        statement = BatchStatement(serial_consistency_level=ConsistencyLevel.LOCAL_SERIAL)
+        statement.add("UPDATE test3rf.test SET v=1 WHERE k=0 IF v=0")
+        self.assertEqual(statement.serial_consistency_level, ConsistencyLevel.LOCAL_SERIAL)
+        future = self.session.execute_async(statement)
+        result = future.result()
+        self.assertEqual(future.message.serial_consistency_level, ConsistencyLevel.LOCAL_SERIAL)
         self.assertEqual(1, len(result))
         self.assertTrue(result[0].applied)
 
@@ -412,15 +442,16 @@ class LightweightTransactionTests(unittest.TestCase):
         for (success, result) in results:
             if success:
                 continue
-            # In this case result is an exception
-            if type(result).__name__ == "NoHostAvailable":
-                self.fail("PYTHON-91: Disconnected from Cassandra: %s" % result.message)
-                break
-            if type(result).__name__ == "WriteTimeout":
-                received_timeout = True
-                continue
-            self.fail("Unexpected exception %s: %s" % (type(result).__name__, result.message))
-            break
+            else:
+                # In this case result is an exception
+                if type(result).__name__ == "NoHostAvailable":
+                    self.fail("PYTHON-91: Disconnected from Cassandra: %s" % result.message)
+                if type(result).__name__ == "WriteTimeout":
+                    received_timeout = True
+                    continue
+                if type(result).__name__ == "ReadTimeout":
+                    continue
+                self.fail("Unexpected exception %s: %s" % (type(result).__name__, result.message))
 
         # Make sure test passed
         self.assertTrue(received_timeout)
@@ -459,8 +490,6 @@ class BatchStatementDefaultRoutingKeyTests(unittest.TestCase):
         """
         batch routing key is inherited from SimpleStatement
         """
-        self.cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        self.session = self.cluster.connect()
         batch = BatchStatement()
         batch.add(self.simple_statement)
         self.assertIsNotNone(batch.routing_key)

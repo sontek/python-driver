@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -147,24 +147,6 @@ class TwistedConnection(Connection):
     def initialize_reactor(cls):
         if not cls._loop:
             cls._loop = TwistedLoop()
-
-    @classmethod
-    def factory(cls, *args, **kwargs):
-        """
-        A factory function which returns connections which have
-        succeeded in connecting and are ready for service (or
-        raises an exception otherwise).
-        """
-        timeout = kwargs.pop('timeout', 5.0)
-        conn = cls(*args, **kwargs)
-        conn.connected_event.wait(timeout)
-        if conn.last_error:
-            raise conn.last_error
-        elif not conn.connected_event.is_set():
-            conn.close()
-            raise OperationTimedOut("Timed out creating connection")
-        else:
-            return conn
 
     def __init__(self, *args, **kwargs):
         """

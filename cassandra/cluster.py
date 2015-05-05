@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ from cassandra import (ConsistencyLevel, AuthenticationFailed,
                        UnsupportedOperation, Unauthorized)
 from cassandra.connection import (ConnectionException, ConnectionShutdown,
                                   ConnectionHeartbeat)
+from cassandra.cqltypes import UserType
 from cassandra.encoder import Encoder
 from cassandra.protocol import (QueryMessage, ResultMessage,
                                 ErrorMessage, ReadTimeoutErrorMessage,
@@ -63,13 +64,12 @@ from cassandra.metadata import Metadata, protect_name
 from cassandra.policies import (RoundRobinPolicy, SimpleConvictionPolicy,
                                 ExponentialReconnectionPolicy, HostDistance,
                                 RetryPolicy)
-from cassandra.pool import (_ReconnectionHandler, _HostReconnectionHandler,
+from cassandra.pool import (Host, _ReconnectionHandler, _HostReconnectionHandler,
                             HostConnectionPool, HostConnection,
                             NoConnectionsAvailable)
 from cassandra.query import (SimpleStatement, PreparedStatement, BoundStatement,
                              BatchStatement, bind_params, QueryTrace, Statement,
                              named_tuple_factory, dict_factory, FETCH_SIZE_UNSET)
-
 
 def _is_eventlet_monkey_patched():
     if 'eventlet.patcher' not in sys.modules:
@@ -426,6 +426,14 @@ class Cluster(object):
     See :attr:`.schema_event_refresh_window` for discussion of rationale
     """
 
+    connect_timeout = 5
+    """
+    Timeout, in seconds, for creating new connections.
+
+    This timeout covers the entire connection negotiation, including TCP
+    establishment, options passing, and authentication.
+    """
+
     sessions = None
     control_connection = None
     scheduler = None
@@ -464,7 +472,8 @@ class Cluster(object):
                  control_connection_timeout=2.0,
                  idle_heartbeat_interval=30,
                  schema_event_refresh_window=2,
-                 topology_event_refresh_window=10):
+                 topology_event_refresh_window=10,
+                 connect_timeout=5):
         """
         Any of the mutable Cluster attributes may be set as keyword arguments
         to the constructor.
@@ -517,6 +526,7 @@ class Cluster(object):
         self.idle_heartbeat_interval = idle_heartbeat_interval
         self.schema_event_refresh_window = schema_event_refresh_window
         self.topology_event_refresh_window = topology_event_refresh_window
+        self.connect_timeout = connect_timeout
 
         self._listeners = set()
         self._listener_lock = Lock()
@@ -524,7 +534,7 @@ class Cluster(object):
         # let Session objects be GC'ed (and shutdown) when the user no longer
         # holds a reference.
         self.sessions = WeakSet()
-        self.metadata = Metadata(self)
+        self.metadata = Metadata()
         self.control_connection = None
         self._prepared_statements = WeakValueDictionary()
         self._prepared_statement_lock = Lock()
@@ -615,6 +625,7 @@ class Cluster(object):
         self._user_types[keyspace][user_type] = klass
         for session in self.sessions:
             session.user_type_registered(keyspace, user_type, klass)
+        UserType.evict_udt_class(keyspace, user_type)
 
     def get_min_requests_per_connection(self, host_distance):
         return self._min_requests_per_connection[host_distance]
@@ -705,11 +716,11 @@ class Cluster(object):
         Intended for internal use only.
         """
         kwargs = self._make_connection_kwargs(address, kwargs)
-        return self.connection_class.factory(address, *args, **kwargs)
+        return self.connection_class.factory(address, self.connect_timeout, *args, **kwargs)
 
     def _make_connection_factory(self, host, *args, **kwargs):
         kwargs = self._make_connection_kwargs(host.address, kwargs)
-        return partial(self.connection_class.factory, host.address, *args, **kwargs)
+        return partial(self.connection_class.factory, host.address, self.connect_timeout, *args, **kwargs)
 
     def _make_connection_kwargs(self, address, kwargs_dict):
         if self._auth_provider_callable:
@@ -741,8 +752,8 @@ class Cluster(object):
                 self.connection_class.initialize_reactor()
                 atexit.register(partial(_shutdown_cluster, self))
                 for address in self.contact_points:
-                    host = self.add_host(address, signal=False)
-                    if host:
+                    host, new = self.add_host(address, signal=False)
+                    if new:
                         host.set_up()
                         for listener in self.listeners:
                             listener.on_add(host)
@@ -1067,15 +1078,17 @@ class Cluster(object):
     def add_host(self, address, datacenter=None, rack=None, signal=True, refresh_nodes=True):
         """
         Called when adding initial contact points and when the control
-        connection subsequently discovers a new node.  Intended for internal
-        use only.
+        connection subsequently discovers a new node.
+        Returns a Host instance, and a flag indicating whether it was new in
+        the metadata.
+        Intended for internal use only.
         """
-        new_host = self.metadata.add_host(address, datacenter, rack)
-        if new_host and signal:
-            log.info("New Cassandra host %r discovered", new_host)
-            self.on_add(new_host, refresh_nodes)
+        host, new = self.metadata.add_or_return_host(Host(address, self.conviction_policy_factory, datacenter, rack))
+        if new and signal:
+            log.info("New Cassandra host %r discovered", host)
+            self.on_add(host, refresh_nodes)
 
-        return new_host
+        return host, new
 
     def remove_host(self, host):
         """
@@ -1257,10 +1270,8 @@ class Session(object):
 
     Setting this to :const:`None` will cause no timeouts to be set by default.
 
-    **Important**: This timeout currently has no effect on callbacks registered
-    on a :class:`~.ResponseFuture` through :meth:`.ResponseFuture.add_callback` or
-    :meth:`.ResponseFuture.add_errback`; even if a query exceeds this default
-    timeout, neither the registered callback or errback will be called.
+    Please see :meth:`.ResponseFuture.result` for details on the scope and
+    effect of this timeout.
 
     .. versionadded:: 2.0.0
     """
@@ -1379,7 +1390,8 @@ class Session(object):
         which an :exc:`.OperationTimedOut` exception will be raised if the query
         has not completed.  If not set, the timeout defaults to
         :attr:`~.Session.default_timeout`.  If set to :const:`None`, there is
-        no timeout.
+        no timeout. Please see :meth:`.ResponseFuture.result` for details on
+        the scope and effect of this timeout.
 
         If `trace` is set to :const:`True`, an attempt will be made to
         fetch the trace details and attach them to the `query`'s
@@ -1737,7 +1749,7 @@ class Session(object):
         def encode(val):
             return '{ %s }' % ' , '.join('%s : %s' % (
                 field_name,
-                self.encoder.cql_encode_all_types(getattr(val, field_name))
+                self.encoder.cql_encode_all_types(getattr(val, field_name, None))
             ) for field_name in type_meta.field_names)
 
         self.encoder.mapping[klass] = encode
@@ -2156,6 +2168,7 @@ class ControlConnection(object):
 
     def _refresh_node_list_and_token_map(self, connection, preloaded_results=None,
                                          force_token_rebuild=False):
+
         if preloaded_results:
             log.debug("[control connection] Refreshing node list and token map using preloaded results")
             peers_result = preloaded_results[0]
@@ -2213,7 +2226,7 @@ class ControlConnection(object):
             rack = row.get("rack")
             if host is None:
                 log.debug("[control connection] Found new host to connect to: %s", addr)
-                host = self._cluster.add_host(addr, datacenter, rack, signal=True, refresh_nodes=False)
+                host, _ = self._cluster.add_host(addr, datacenter, rack, signal=True, refresh_nodes=False)
                 should_rebuild_token_map = True
             else:
                 should_rebuild_token_map |= self._update_location_info(host, datacenter, rack)
@@ -2935,8 +2948,20 @@ class ResponseFuture(object):
         You may set a timeout (in seconds) with the `timeout` parameter.
         By default, the :attr:`~.default_timeout` for the :class:`.Session`
         this was created through will be used for the timeout on this
-        operation.  If the timeout is exceeded, an
-        :exc:`cassandra.OperationTimedOut` will be raised.
+        operation.
+
+        This timeout applies to the entire request, including any retries
+        (decided internally by the :class:`.policies.RetryPolicy` used with
+        the request).
+
+        If the timeout is exceeded, an :exc:`cassandra.OperationTimedOut` will be raised.
+        This is a client-side timeout. For more information
+        about server-side coordinator timeouts, see :class:`.policies.RetryPolicy`.
+
+        **Important**: This timeout currently has no effect on callbacks registered
+        on a :class:`~.ResponseFuture` through :meth:`.ResponseFuture.add_callback` or
+        :meth:`.ResponseFuture.add_errback`; even if a query exceeds this default
+        timeout, neither the registered callback or errback will be called.
 
         Example usage::
 

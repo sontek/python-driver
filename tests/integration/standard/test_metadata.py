@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,19 +19,20 @@ except ImportError:
 
 import difflib
 from mock import Mock
-import six
-import sys
+import six, logging, sys, traceback
 
-from cassandra import AlreadyExists
+from cassandra import AlreadyExists, OperationTimedOut
 
 from cassandra.cluster import Cluster
-from cassandra.metadata import (Metadata, KeyspaceMetadata, TableMetadata,
+from cassandra.metadata import (Metadata, KeyspaceMetadata, TableMetadata, IndexMetadata,
                                 Token, MD5Token, TokenMap, murmur3)
 from cassandra.policies import SimpleConvictionPolicy
 from cassandra.pool import Host
 
 from tests.integration import (get_cluster, use_singledc, PROTOCOL_VERSION,
                                get_server_versions)
+
+log = logging.getLogger(__name__)
 
 
 def setup_module():
@@ -46,47 +47,23 @@ class SchemaMetadataTests(unittest.TestCase):
     def cfname(self):
         return self._testMethodName.lower()
 
-    @classmethod
-    def setup_class(cls):
-        cluster = Cluster(protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-        try:
-            results = session.execute("SELECT keyspace_name FROM system.schema_keyspaces")
-            existing_keyspaces = [row[0] for row in results]
-            if cls.ksname in existing_keyspaces:
-                session.execute("DROP KEYSPACE %s" % cls.ksname)
-
-            session.execute(
-                """
-                CREATE KEYSPACE %s
-                WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'};
-                """ % cls.ksname)
-        finally:
-            cluster.shutdown()
-
-    @classmethod
-    def teardown_class(cls):
-        cluster = Cluster(['127.0.0.1'],
-                          protocol_version=PROTOCOL_VERSION)
-        session = cluster.connect()
-        try:
-            session.execute("DROP KEYSPACE %s" % cls.ksname)
-        finally:
-            cluster.shutdown()
-
     def setUp(self):
-        self.cluster = Cluster(['127.0.0.1'],
-                               protocol_version=PROTOCOL_VERSION)
+        self._cass_version, self._cql_version = get_server_versions()
+
+        self.cluster = Cluster(protocol_version=PROTOCOL_VERSION)
         self.session = self.cluster.connect()
+        self.session.execute("CREATE KEYSPACE schemametadatatest WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}")
 
     def tearDown(self):
-        try:
-            self.session.execute(
-                """
-                DROP TABLE {ksname}.{cfname}
-                """.format(ksname=self.ksname, cfname=self.cfname))
-        finally:
-            self.cluster.shutdown()
+        while True:
+            try:
+                self.session.execute("DROP KEYSPACE schemametadatatest")
+                self.cluster.shutdown()
+                break
+            except OperationTimedOut:
+                ex_type, ex, tb = sys.exc_info()
+                log.warn("{0}: {1} Backtrace: {2}".format(ex_type.__name__, ex, traceback.extract_tb(tb)))
+                del tb
 
     def make_create_statement(self, partition_cols, clustering_cols=None, other_cols=None, compact=False):
         clustering_cols = clustering_cols or []
@@ -143,7 +120,6 @@ class SchemaMetadataTests(unittest.TestCase):
         self.cluster.control_connection.refresh_schema()
 
         meta = self.cluster.metadata
-        self.assertNotEqual(meta.cluster_ref, None)
         self.assertNotEqual(meta.cluster_name, None)
         self.assertTrue(self.ksname in meta.keyspaces)
         ksmeta = meta.keyspaces[self.ksname]
@@ -309,6 +285,9 @@ class SchemaMetadataTests(unittest.TestCase):
         self.assertIn('CREATE INDEX e_index', statement)
 
     def test_collection_indexes(self):
+        if get_server_versions()[0] < (2, 1, 0):
+            raise unittest.SkipTest("Secondary index on collections were introduced in Cassandra 2.1")
+
         self.session.execute("CREATE TABLE %s.%s (a int PRIMARY KEY, b map<text, text>)"
                              % (self.ksname, self.cfname))
         self.session.execute("CREATE INDEX index1 ON %s.%s (keys(b))"
@@ -367,6 +346,7 @@ class TestCodeCoverage(unittest.TestCase):
             keyspace_metadata = cluster.metadata.keyspaces[keyspace]
             self.assertIsInstance(keyspace_metadata.export_as_string(), six.string_types)
             self.assertIsInstance(keyspace_metadata.as_cql_query(), six.string_types)
+        cluster.shutdown()
 
     def assert_equal_diff(self, received, expected):
         if received != expected:
@@ -389,7 +369,7 @@ class TestCodeCoverage(unittest.TestCase):
                 "Protocol 3.0+ is required for UDT change events, currently testing against %r"
                 % (PROTOCOL_VERSION,))
 
-        if sys.version_info[2:] != (2, 7):
+        if sys.version_info[0:2] != (2, 7):
             raise unittest.SkipTest('This test compares static strings generated from dict items, which may change orders. Test with 2.7.')
 
         cluster = Cluster(protocol_version=PROTOCOL_VERSION)
@@ -478,6 +458,8 @@ CREATE TABLE export_udts.users (
 
         self.assert_equal_diff(table_meta.export_as_string(), expected_string)
 
+        cluster.shutdown()
+
     def test_case_sensitivity(self):
         """
         Test that names that need to be escaped in CREATE statements are
@@ -516,6 +498,7 @@ CREATE TABLE export_udts.users (
         self.assertIn('PRIMARY KEY (k, "A")', schema)
         self.assertIn('WITH CLUSTERING ORDER BY ("A" DESC)', schema)
         self.assertIn('CREATE INDEX myindex ON "AnInterestingKeyspace"."AnInterestingTable" ("MyColumn")', schema)
+        cluster.shutdown()
 
     def test_already_exists_exceptions(self):
         """
@@ -538,6 +521,7 @@ CREATE TABLE export_udts.users (
                 k int PRIMARY KEY,
                 v int )'''
         self.assertRaises(AlreadyExists, session.execute, ddl % (ksname, cfname))
+        cluster.shutdown()
 
     def test_replicas(self):
         """
@@ -555,6 +539,7 @@ CREATE TABLE export_udts.users (
         host = list(cluster.metadata.get_replicas('test3rf', 'key'))[0]
         self.assertEqual(host.datacenter, 'dc1')
         self.assertEqual(host.rack, 'r1')
+        cluster.shutdown()
 
     def test_token_map(self):
         """
@@ -574,13 +559,14 @@ CREATE TABLE export_udts.users (
             self.assertEqual(set(get_replicas('test3rf', token)), set(owners))
             self.assertEqual(set(get_replicas('test2rf', token)), set([owners[(i + 1) % 3], owners[(i + 2) % 3]]))
             self.assertEqual(set(get_replicas('test1rf', token)), set([owners[(i + 1) % 3]]))
+        cluster.shutdown()
 
     def test_legacy_tables(self):
 
         if get_server_versions()[0] < (2, 1, 0):
             raise unittest.SkipTest('Test schema output assumes 2.1.0+ options')
 
-        if sys.version_info[2:] != (2, 7):
+        if sys.version_info[0:2] != (2, 7):
             raise unittest.SkipTest('This test compares static strings generated from dict items, which may change orders. Test with 2.7.')
 
         cli_script = """CREATE KEYSPACE legacy
@@ -921,3 +907,98 @@ class KeyspaceAlterMetadata(unittest.TestCase):
         new_keyspace_meta = self.cluster.metadata.keyspaces[name]
         self.assertNotEqual(original_keyspace_meta, new_keyspace_meta)
         self.assertEqual(new_keyspace_meta.durable_writes, False)
+
+
+class IndexMapTests(unittest.TestCase):
+
+    keyspace_name = 'index_map_tests'
+
+    @property
+    def table_name(self):
+        return self._testMethodName.lower()
+
+    @classmethod
+    def setup_class(cls):
+        cls.cluster = Cluster(protocol_version=PROTOCOL_VERSION)
+        cls.session = cls.cluster.connect()
+        try:
+            if cls.keyspace_name in cls.cluster.metadata.keyspaces:
+                cls.session.execute("DROP KEYSPACE %s" % cls.keyspace_name)
+
+            cls.session.execute(
+                """
+                CREATE KEYSPACE %s
+                WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'};
+                """ % cls.keyspace_name)
+            cls.session.set_keyspace(cls.keyspace_name)
+        except Exception:
+            cls.cluster.shutdown()
+            raise
+
+    @classmethod
+    def teardown_class(cls):
+        try:
+            cls.session.execute("DROP KEYSPACE %s" % cls.keyspace_name)
+        finally:
+            cls.cluster.shutdown()
+
+    def create_basic_table(self):
+        self.session.execute("CREATE TABLE %s (k int PRIMARY KEY, a int)" % self.table_name)
+
+    def drop_basic_table(self):
+        self.session.execute("DROP TABLE %s" % self.table_name)
+
+    def test_index_updates(self):
+        self.create_basic_table()
+
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        table_meta = ks_meta.tables[self.table_name]
+        self.assertNotIn('a_idx', ks_meta.indexes)
+        self.assertNotIn('b_idx', ks_meta.indexes)
+        self.assertNotIn('a_idx', table_meta.indexes)
+        self.assertNotIn('b_idx', table_meta.indexes)
+
+        self.session.execute("CREATE INDEX a_idx ON %s (a)" % self.table_name)
+        self.session.execute("ALTER TABLE %s ADD b int" % self.table_name)
+        self.session.execute("CREATE INDEX b_idx ON %s (b)" % self.table_name)
+
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        table_meta = ks_meta.tables[self.table_name]
+        self.assertIsInstance(ks_meta.indexes['a_idx'], IndexMetadata)
+        self.assertIsInstance(ks_meta.indexes['b_idx'], IndexMetadata)
+        self.assertIsInstance(table_meta.indexes['a_idx'], IndexMetadata)
+        self.assertIsInstance(table_meta.indexes['b_idx'], IndexMetadata)
+
+        # both indexes updated when index dropped
+        self.session.execute("DROP INDEX a_idx")
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        table_meta = ks_meta.tables[self.table_name]
+        self.assertNotIn('a_idx', ks_meta.indexes)
+        self.assertIsInstance(ks_meta.indexes['b_idx'], IndexMetadata)
+        self.assertNotIn('a_idx', table_meta.indexes)
+        self.assertIsInstance(table_meta.indexes['b_idx'], IndexMetadata)
+
+        # keyspace index updated when table dropped
+        self.drop_basic_table()
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        self.assertNotIn(self.table_name, ks_meta.tables)
+        self.assertNotIn('a_idx', ks_meta.indexes)
+        self.assertNotIn('b_idx', ks_meta.indexes)
+
+    def test_index_follows_alter(self):
+        self.create_basic_table()
+
+        idx = self.table_name + '_idx'
+        self.session.execute("CREATE INDEX %s ON %s (a)" % (idx, self.table_name))
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        table_meta = ks_meta.tables[self.table_name]
+        self.assertIsInstance(ks_meta.indexes[idx], IndexMetadata)
+        self.assertIsInstance(table_meta.indexes[idx], IndexMetadata)
+        self.session.execute('ALTER KEYSPACE %s WITH durable_writes = false' % self.keyspace_name)
+        old_meta = ks_meta
+        ks_meta = self.cluster.metadata.keyspaces[self.keyspace_name]
+        self.assertIsNot(ks_meta, old_meta)
+        table_meta = ks_meta.tables[self.table_name]
+        self.assertIsInstance(ks_meta.indexes[idx], IndexMetadata)
+        self.assertIsInstance(table_meta.indexes[idx], IndexMetadata)
+        self.drop_basic_table()

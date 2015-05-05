@@ -1,5 +1,5 @@
 # Copyright 2014 Symantec Corporation
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,19 +56,6 @@ class EventletConnection(Connection):
     @classmethod
     def initialize_reactor(cls):
         eventlet.monkey_patch()
-
-    @classmethod
-    def factory(cls, *args, **kwargs):
-        timeout = kwargs.pop('timeout', 5.0)
-        conn = cls(*args, **kwargs)
-        conn.connected_event.wait(timeout)
-        if conn.last_error:
-            raise conn.last_error
-        elif not conn.connected_event.is_set():
-            conn.close()
-            raise OperationTimedOut("Timed out creating connection")
-        else:
-            return conn
 
     def __init__(self, *args, **kwargs):
         Connection.__init__(self, *args, **kwargs)

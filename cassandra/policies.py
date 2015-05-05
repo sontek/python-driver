@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -267,11 +267,11 @@ class DCAwareRoundRobinPolicy(LoadBalancingPolicy):
         for host in islice(cycle(local_live), pos, pos + len(local_live)):
             yield host
 
-        for dc, current_dc_hosts in six.iteritems(self._dc_live_hosts):
-            if dc == self.local_dc:
-                continue
-
-            for host in current_dc_hosts[:self.used_hosts_per_remote_dc]:
+        # the dict can change, so get candidate DCs iterating over keys of a copy
+        other_dcs = [dc for dc in self._dc_live_hosts.copy().keys() if dc != self.local_dc]
+        for dc in other_dcs:
+            remote_live = self._dc_live_hosts.get(dc, ())
+            for host in remote_live[:self.used_hosts_per_remote_dc]:
                 yield host
 
     def on_up(self, host):
@@ -597,8 +597,13 @@ WriteType.name_to_value = {
 
 class RetryPolicy(object):
     """
-    A policy that describes whether to retry, rethrow, or ignore timeout
-    and unavailable failures.
+    A policy that describes whether to retry, rethrow, or ignore coordinator
+    timeout and unavailable failures. These are failures reported from the
+    server side. Timeouts are configured by
+    `settings in cassandra.yaml <https://github.com/apache/cassandra/blob/cassandra-2.1.4/conf/cassandra.yaml#L568-L584>`_.
+    Unavailable failures occur when the coordinator cannot acheive the consistency
+    level for a request. For further information see the method descriptions
+    below.
 
     To specify a default retry policy, set the
     :attr:`.Cluster.default_retry_policy` attribute to an instance of this

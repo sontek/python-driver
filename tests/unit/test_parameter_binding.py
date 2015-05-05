@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,6 +67,10 @@ class ParamBindingTest(unittest.TestCase):
     def test_quote_escaping(self):
         result = bind_params("%s", ("""'ef''ef"ef""ef'""",), Encoder())
         self.assertEqual(result, """'''ef''''ef"ef""ef'''""")
+
+    def test_float_precision(self):
+        f = 3.4028234663852886e+38
+        self.assertEqual(float(bind_params("%s", (f,), Encoder())), f)
 
 
 class BoundStatementTestCase(unittest.TestCase):

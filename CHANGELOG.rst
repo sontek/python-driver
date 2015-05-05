@@ -1,5 +1,36 @@
+2.5.1
+=====
+April 23, 2015
+
+Bug Fixes
+---------
+* Fix thread safety in DC-aware load balancing policy (PYTHON-297)
+* Fix race condition in node/token rebuild (PYTHON-298)
+* Set and send serial consistency parameter (PYTHON-299)
+
+2.5.0
+=====
+March 30, 2015
+
+Features
+--------
+* Integrated cqlengine object mapping package
+* Utility functions for converting timeuuids and datetime (PYTHON-99)
+* Schema metadata fetch window randomized, config options added (PYTHON-202)
+* Support for new Date and Time Cassandra types (PYTHON-190)
+
+Bug Fixes
+---------
+* Fix index target for collection indexes (full(), keys()) (PYTHON-222)
+* Thread exception during GIL cleanup (PYTHON-229)
+* Workaround for rounding anomaly in datetime.utcfromtime (Python 3.4) (PYTHON-230)
+* Normalize text serialization for lookup in OrderedMap (PYTHON-231)
+* Support reading CompositeType data (PYTHON-234)
+* Preserve float precision in CQL encoding (PYTHON-243)
+
 2.1.4
 =====
+January 26, 2015
 
 Features
 --------

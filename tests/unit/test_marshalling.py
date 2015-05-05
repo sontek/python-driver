@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ except ImportError:
     import unittest  # noqa
 
 import platform
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 
-from cassandra.cqltypes import lookup_casstype
-from cassandra.util import OrderedMap, sortedset
+from cassandra.cqltypes import lookup_casstype, DecimalType, UTF8Type
+from cassandra.util import OrderedMap, OrderedMapSerializedKey, sortedset, Time, Date
 
 marshalled_value_pairs = (
     # binary form, type, python native type
@@ -76,15 +76,19 @@ marshalled_value_pairs = (
     (b'', 'ListType(FloatType)', None),
     (b'\x00\x00\x00\x01\x01', 'TupleType(IntegerType)', (1,)),
     (b'', 'SetType(LongType)', None),
-    (b'\x00\x00', 'MapType(DecimalType, BooleanType)', OrderedMap()),
+    (b'\x00\x00', 'MapType(DecimalType, BooleanType)', OrderedMapSerializedKey(DecimalType, 0)),
     (b'\x00\x00', 'ListType(FloatType)', []),
     (b'\x00\x00', 'SetType(IntegerType)', sortedset()),
     (b'\x00\x01\x00\x10\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0', 'ListType(TimeUUIDType)', [UUID(bytes=b'\xafYC\xa3\xea<\x11\xe1\xabc\xc4,\x03"y\xf0')]),
+    (b'\x80\x00\x00\x01', 'SimpleDateType', Date(1)),
+    (b'\x7f\xff\xff\xff', 'SimpleDateType', Date('1969-12-31')),
+    (b'\x00\x00\x00\x00\x00\x00\x00\x01', 'TimeType', Time(1))
 )
 
-ordered_map_value = OrderedMap([(u'\u307fbob', 199),
-                                (u'', -1),
-                                (u'\\', 0)])
+ordered_map_value = OrderedMapSerializedKey(UTF8Type, 2)
+ordered_map_value._insert(u'\u307fbob', 199)
+ordered_map_value._insert(u'', -1)
+ordered_map_value._insert(u'\\', 0)
 
 # these following entries work for me right now, but they're dependent on
 # vagaries of internal python ordering for unordered types

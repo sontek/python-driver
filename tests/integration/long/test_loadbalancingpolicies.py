@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import struct
-import time
-from cassandra import ConsistencyLevel, Unavailable
+import struct, time, logging, sys, traceback
+
+from cassandra import ConsistencyLevel, Unavailable, OperationTimedOut, ReadTimeout
 from cassandra.cluster import Cluster, NoHostAvailable
 from cassandra.concurrent import execute_concurrent_with_args
 from cassandra.policies import (RoundRobinPolicy, DCAwareRoundRobinPolicy,
@@ -31,6 +31,8 @@ try:
     import unittest2 as unittest
 except ImportError:
     import unittest  # noqa
+
+log = logging.getLogger(__name__)
 
 
 class LoadBalancingPolicyTests(unittest.TestCase):
@@ -59,14 +61,28 @@ class LoadBalancingPolicyTests(unittest.TestCase):
                 self.prepared = session.prepare(query_string)
 
             for i in range(count):
-                self.coordinator_stats.add_coordinator(session.execute_async(self.prepared.bind((0,))))
+                while True:
+                    try:
+                        self.coordinator_stats.add_coordinator(session.execute_async(self.prepared.bind((0,))))
+                        break
+                    except (OperationTimedOut, ReadTimeout):
+                        ex_type, ex, tb = sys.exc_info()
+                        log.warn("{0}: {1} Backtrace: {2}".format(ex_type.__name__, ex, traceback.extract_tb(tb)))
+                        del tb
         else:
             routing_key = struct.pack('>i', 0)
             for i in range(count):
                 ss = SimpleStatement('SELECT * FROM %s.cf WHERE k = 0' % keyspace,
                                      consistency_level=consistency_level,
                                      routing_key=routing_key)
-                self.coordinator_stats.add_coordinator(session.execute_async(ss))
+                while True:
+                    try:
+                        self.coordinator_stats.add_coordinator(session.execute_async(ss))
+                        break
+                    except (OperationTimedOut, ReadTimeout):
+                        ex_type, ex, tb = sys.exc_info()
+                        log.warn("{0}: {1} Backtrace: {2}".format(ex_type.__name__, ex, traceback.extract_tb(tb)))
+                        del tb
 
     def test_roundrobin(self):
         use_singledc()
@@ -147,6 +163,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.coordinator_stats.assert_query_count_equals(self, 4, 3)
         self.coordinator_stats.assert_query_count_equals(self, 5, 3)
 
+        cluster.shutdown()
+
     def test_roundrobin_two_dcs_2(self):
         use_multidc([2, 2])
         keyspace = 'test_roundrobin_two_dcs_2'
@@ -185,6 +203,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.coordinator_stats.assert_query_count_equals(self, 4, 3)
         self.coordinator_stats.assert_query_count_equals(self, 5, 3)
 
+        cluster.shutdown()
+
     def test_dc_aware_roundrobin_two_dcs(self):
         use_multidc([3, 2])
         keyspace = 'test_dc_aware_roundrobin_two_dcs'
@@ -208,6 +228,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.coordinator_stats.assert_query_count_equals(self, 4, 0)
         self.coordinator_stats.assert_query_count_equals(self, 5, 0)
 
+        cluster.shutdown()
+
     def test_dc_aware_roundrobin_two_dcs_2(self):
         use_multidc([3, 2])
         keyspace = 'test_dc_aware_roundrobin_two_dcs_2'
@@ -230,6 +252,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.coordinator_stats.assert_query_count_equals(self, 3, 0)
         self.coordinator_stats.assert_query_count_equals(self, 4, 6)
         self.coordinator_stats.assert_query_count_equals(self, 5, 6)
+
+        cluster.shutdown()
 
     def test_dc_aware_roundrobin_one_remote_host(self):
         use_multidc([2, 2])
@@ -314,6 +338,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         except NoHostAvailable:
             pass
 
+        cluster.shutdown()
+
     def test_token_aware(self):
         keyspace = 'test_token_aware'
         self.token_aware(keyspace)
@@ -394,6 +420,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.assertEqual(results, set([0, 12]))
         self.coordinator_stats.assert_query_count_equals(self, 2, 0)
 
+        cluster.shutdown()
+
     def test_token_aware_composite_key(self):
         use_singledc()
         keyspace = 'test_token_aware_composite_key'
@@ -422,6 +450,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         results = session.execute('SELECT * FROM %s WHERE k1 = 1 AND k2 = 2' % table)
         self.assertTrue(len(results) == 1)
         self.assertTrue(results[0].i)
+
+        cluster.shutdown()
 
     def test_token_aware_with_rf_2(self, use_prepared=False):
         use_singledc()
@@ -452,6 +482,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         self.coordinator_stats.assert_query_count_equals(self, 2, 0)
         self.coordinator_stats.assert_query_count_equals(self, 3, 12)
 
+        cluster.shutdown()
+
     def test_token_aware_with_local_table(self):
         use_singledc()
         cluster = Cluster(
@@ -464,6 +496,8 @@ class LoadBalancingPolicyTests(unittest.TestCase):
         r = session.execute(p, ('local',))
         self.assertEqual(len(r), 1)
         self.assertEqual(r[0].key, 'local')
+
+        cluster.shutdown()
 
     def test_white_list(self):
         use_singledc()
@@ -499,3 +533,5 @@ class LoadBalancingPolicyTests(unittest.TestCase):
             self.fail()
         except NoHostAvailable:
             pass
+
+        cluster.shutdown()

@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 try:
     import unittest2 as unittest
 except ImportError:
-    import unittest # noqa
+    import unittest  # noqa
 
 from itertools import islice, cycle
 from mock import Mock
@@ -139,21 +139,22 @@ class RoundRobinPolicyTest(unittest.TestCase):
             threads.append(Thread(target=host_down))
 
         # make the GIL switch after every instruction, maximizing
-        # the chace of race conditions
-        if six.PY2:
+        # the chance of race conditions
+        check = six.PY2 or '__pypy__' in sys.builtin_module_names
+        if check:
             original_interval = sys.getcheckinterval()
         else:
             original_interval = sys.getswitchinterval()
 
         try:
-            if six.PY2:
+            if check:
                 sys.setcheckinterval(0)
             else:
                 sys.setswitchinterval(0.0001)
             map(lambda t: t.start(), threads)
             map(lambda t: t.join(), threads)
         finally:
-            if six.PY2:
+            if check:
                 sys.setcheckinterval(original_interval)
             else:
                 sys.setswitchinterval(original_interval)
@@ -291,6 +292,160 @@ class DCAwareRoundRobinPolicyTest(unittest.TestCase):
         qplan = list(policy.make_query_plan())
         self.assertEqual(qplan, [])
 
+    def test_modification_during_generation(self):
+        hosts = [Host(i, SimpleConvictionPolicy) for i in range(4)]
+        for h in hosts[:2]:
+            h.set_location_info("dc1", "rack1")
+        for h in hosts[2:]:
+            h.set_location_info("dc2", "rack1")
+
+        policy = DCAwareRoundRobinPolicy("dc1", used_hosts_per_remote_dc=3)
+        policy.populate(Mock(), hosts)
+
+        # The general concept here is to change thee internal state of the
+        # policy during plan generation. In this case we use a grey-box
+        # approach that changes specific things during known phases of the
+        # generator.
+
+        new_host = Host(4, SimpleConvictionPolicy)
+        new_host.set_location_info("dc1", "rack1")
+
+        # new local before iteration
+        plan = policy.make_query_plan()
+        policy.on_up(new_host)
+        # local list is not bound yet, so we get to see that one
+        self.assertEqual(len(list(plan)), 3 + 2)
+
+        # remove local before iteration
+        plan = policy.make_query_plan()
+        policy.on_down(new_host)
+        # local list is not bound yet, so we don't see it
+        self.assertEqual(len(list(plan)), 2 + 2)
+
+        # new local after starting iteration
+        plan = policy.make_query_plan()
+        next(plan)
+        policy.on_up(new_host)
+        # local list was is bound, and one consumed, so we only see the other original
+        self.assertEqual(len(list(plan)), 1 + 2)
+
+        # remove local after traversing available
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_down(new_host)
+        # we should be past the local list
+        self.assertEqual(len(list(plan)), 0 + 2)
+
+        # REMOTES CHANGE
+        new_host.set_location_info("dc2", "rack1")
+
+        # new remote after traversing local, but not starting remote
+        plan = policy.make_query_plan()
+        for _ in range(2):
+            next(plan)
+        policy.on_up(new_host)
+        # list is updated before we get to it
+        self.assertEqual(len(list(plan)), 0 + 3)
+
+        # remove remote after traversing local, but not starting remote
+        plan = policy.make_query_plan()
+        for _ in range(2):
+            next(plan)
+        policy.on_down(new_host)
+        # list is updated before we get to it
+        self.assertEqual(len(list(plan)), 0 + 2)
+
+        # new remote after traversing local, and starting remote
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_up(new_host)
+        # slice is already made, and we've consumed one
+        self.assertEqual(len(list(plan)), 0 + 1)
+
+        # remove remote after traversing local, and starting remote
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_down(new_host)
+        # slice is created with all present, and we've consumed one
+        self.assertEqual(len(list(plan)), 0 + 2)
+
+        # local DC disappears after finishing it, but not starting remote
+        plan = policy.make_query_plan()
+        for _ in range(2):
+            next(plan)
+        policy.on_down(hosts[0])
+        policy.on_down(hosts[1])
+        # dict traversal starts as normal
+        self.assertEqual(len(list(plan)), 0 + 2)
+        policy.on_up(hosts[0])
+        policy.on_up(hosts[1])
+
+        # PYTHON-297 addresses the following cases, where DCs come and go
+        # during generation
+        # local DC disappears after finishing it, and starting remote
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_down(hosts[0])
+        policy.on_down(hosts[1])
+        # dict traversal has begun and consumed one
+        self.assertEqual(len(list(plan)), 0 + 1)
+        policy.on_up(hosts[0])
+        policy.on_up(hosts[1])
+
+        # remote DC disappears after finishing local, but not starting remote
+        plan = policy.make_query_plan()
+        for _ in range(2):
+            next(plan)
+        policy.on_down(hosts[2])
+        policy.on_down(hosts[3])
+        # nothing left
+        self.assertEqual(len(list(plan)), 0 + 0)
+        policy.on_up(hosts[2])
+        policy.on_up(hosts[3])
+
+        # remote DC disappears while traversing it
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_down(hosts[2])
+        policy.on_down(hosts[3])
+        # we continue with remainder of original list
+        self.assertEqual(len(list(plan)), 0 + 1)
+        policy.on_up(hosts[2])
+        policy.on_up(hosts[3])
+
+
+        another_host = Host(5, SimpleConvictionPolicy)
+        another_host.set_location_info("dc3", "rack1")
+        new_host.set_location_info("dc3", "rack1")
+
+        # new DC while traversing remote
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        policy.on_up(new_host)
+        policy.on_up(another_host)
+        # we continue with remainder of original list
+        self.assertEqual(len(list(plan)), 0 + 1)
+
+        # remote DC disappears after finishing it
+        plan = policy.make_query_plan()
+        for _ in range(3):
+            next(plan)
+        last_host_in_this_dc = next(plan)
+        if last_host_in_this_dc in (new_host, another_host):
+            down_hosts = [new_host, another_host]
+        else:
+            down_hosts = hosts[2:]
+        for h in down_hosts:
+            policy.on_down(h)
+        # the last DC has two
+        self.assertEqual(len(list(plan)), 0 + 2)
+
     def test_no_live_nodes(self):
         """
         Ensure query plan for a downed cluster will execute without errors
@@ -361,6 +516,7 @@ class DCAwareRoundRobinPolicyTest(unittest.TestCase):
         self.assertFalse(policy.local_dc)
         policy.on_add(host_remote)
         self.assertFalse(policy.local_dc)
+
 
 class TokenAwarePolicyTest(unittest.TestCase):
 
@@ -519,7 +675,6 @@ class TokenAwarePolicyTest(unittest.TestCase):
         qplan = list(policy.make_query_plan())
         self.assertEqual(qplan, [])
 
-
     def test_statement_keyspace(self):
         hosts = [Host(str(i), SimpleConvictionPolicy) for i in range(4)]
         for host in hosts:
@@ -665,6 +820,7 @@ class ExponentialReconnectionPolicyTest(unittest.TestCase):
                 self.assertEqual(delay, 100)
 
 ONE = ConsistencyLevel.ONE
+
 
 class RetryPolicyTest(unittest.TestCase):
 

@@ -1,4 +1,130 @@
 from __future__ import with_statement
+import calendar
+import datetime
+import random
+import six
+import uuid
+
+DATETIME_EPOC = datetime.datetime(1970, 1, 1)
+
+
+def datetime_from_timestamp(timestamp):
+    """
+    Creates a timezone-agnostic datetime from timestamp (in seconds) in a consistent manner.
+    Works around a Windows issue with large negative timestamps (PYTHON-119),
+    and rounding differences in Python 3.4 (PYTHON-340).
+
+    :param timestamp: a unix timestamp, in seconds
+
+    :rtype: datetime
+    """
+    dt = DATETIME_EPOC + datetime.timedelta(seconds=timestamp)
+    return dt
+
+
+def unix_time_from_uuid1(uuid_arg):
+    """
+    Converts a version 1 :class:`uuid.UUID` to a timestamp with the same precision
+    as :meth:`time.time()` returns.  This is useful for examining the
+    results of queries returning a v1 :class:`~uuid.UUID`.
+
+    :param uuid_arg: a version 1 :class:`~uuid.UUID`
+
+    :rtype: timestamp
+
+    """
+    return (uuid_arg.time - 0x01B21DD213814000) / 1e7
+
+
+def datetime_from_uuid1(uuid_arg):
+    """
+    Creates a timezone-agnostic datetime from the timestamp in the
+    specified type-1 UUID.
+
+    :param uuid_arg: a version 1 :class:`~uuid.UUID`
+
+    :rtype: timestamp
+
+    """
+    return datetime_from_timestamp(unix_time_from_uuid1(uuid_arg))
+
+
+def min_uuid_from_time(timestamp):
+    """
+    Generates the minimum TimeUUID (type 1) for a given timestamp, as compared by Cassandra.
+
+    See :func:`uuid_from_time` for argument and return types.
+    """
+    return uuid_from_time(timestamp, 0x808080808080, 0x80)  # Cassandra does byte-wise comparison; fill with min signed bytes (0x80 = -128)
+
+
+def max_uuid_from_time(timestamp):
+    """
+    Generates the maximum TimeUUID (type 1) for a given timestamp, as compared by Cassandra.
+
+    See :func:`uuid_from_time` for argument and return types.
+    """
+    return uuid_from_time(timestamp, 0x7f7f7f7f7f7f, 0x3f7f)  # Max signed bytes (0x7f = 127)
+
+
+def uuid_from_time(time_arg, node=None, clock_seq=None):
+    """
+    Converts a datetime or timestamp to a type 1 :class:`uuid.UUID`.
+
+    :param time_arg:
+      The time to use for the timestamp portion of the UUID.
+      This can either be a :class:`datetime` object or a timestamp
+      in seconds (as returned from :meth:`time.time()`).
+    :type datetime: :class:`datetime` or timestamp
+
+    :param node:
+      None integer for the UUID (up to 48 bits). If not specified, this
+      field is randomized.
+    :type node: long
+
+    :param clock_seq:
+      Clock sequence field for the UUID (up to 14 bits). If not specified,
+      a random sequence is generated.
+    :type clock_seq: int
+
+    :rtype: :class:`uuid.UUID`
+
+    """
+    if hasattr(time_arg, 'utctimetuple'):
+        seconds = int(calendar.timegm(time_arg.utctimetuple()))
+        microseconds = (seconds * 1e6) + time_arg.time().microsecond
+    else:
+        microseconds = int(time_arg * 1e6)
+
+    # 0x01b21dd213814000 is the number of 100-ns intervals between the
+    # UUID epoch 1582-10-15 00:00:00 and the Unix epoch 1970-01-01 00:00:00.
+    intervals = int(microseconds * 10) + 0x01b21dd213814000
+
+    time_low = intervals & 0xffffffff
+    time_mid = (intervals >> 32) & 0xffff
+    time_hi_version = (intervals >> 48) & 0x0fff
+
+    if clock_seq is None:
+        clock_seq = random.getrandbits(14)
+    else:
+        if clock_seq > 0x3fff:
+            raise ValueError('clock_seq is out of range (need a 14-bit value)')
+
+    clock_seq_low = clock_seq & 0xff
+    clock_seq_hi_variant = 0x80 | ((clock_seq >> 8) & 0x3f)
+
+    if node is None:
+        node = random.getrandbits(48)
+
+    return uuid.UUID(fields=(time_low, time_mid, time_hi_version,
+                             clock_seq_hi_variant, clock_seq_low, node), version=1)
+
+LOWEST_TIME_UUID = uuid.UUID('00000000-0000-1000-8080-808080808080')
+""" The lowest possible TimeUUID, as sorted by Cassandra. """
+
+HIGHEST_TIME_UUID = uuid.UUID('ffffffff-ffff-1fff-bf7f-7f7f7f7f7f7f')
+""" The highest possible TimeUUID, as sorted by Cassandra. """
+
 
 try:
     from collections import OrderedDict
@@ -556,14 +682,14 @@ except ImportError:
                         isect.add(item)
             return isect
 
+
 from collections import Mapping
-import six
 from six.moves import cPickle
 
 
 class OrderedMap(Mapping):
     '''
-    An ordered map that accepts non-hashable types for keys. It also maintains the 
+    An ordered map that accepts non-hashable types for keys. It also maintains the
     insertion order of items, behaving as OrderedDict in that regard. These maps
     are constructed and read just as normal mapping types, exept that they may
     contain arbitrary collections and other non-hashable items as keys::
@@ -592,6 +718,7 @@ class OrderedMap(Mapping):
     or higher.
 
     '''
+
     def __init__(self, *args, **kwargs):
         if len(args) > 1:
             raise TypeError('expected at most 1 arguments, got %d' % len(args))
@@ -602,7 +729,7 @@ class OrderedMap(Mapping):
             e = args[0]
             if callable(getattr(e, 'keys', None)):
                 for k in e.keys():
-                    self._items.append((k, e[k]))
+                    self._insert(k, e[k])
             else:
                 for k, v in e:
                     self._insert(k, v)
@@ -620,8 +747,11 @@ class OrderedMap(Mapping):
             self._index[flat_key] = len(self._items) - 1
 
     def __getitem__(self, key):
-        index = self._index[self._serialize_key(key)]
-        return self._items[index][1]
+        try:
+            index = self._index[self._serialize_key(key)]
+            return self._items[index][1]
+        except KeyError:
+            raise KeyError(str(key))
 
     def __iter__(self):
         for i in self._items:
@@ -648,8 +778,224 @@ class OrderedMap(Mapping):
             ', '.join("(%r, %r)" % (k, v) for k, v in self._items))
 
     def __str__(self):
-        return '{%s}' % ', '.join("%s: %s" % (k, v) for k, v in self._items)
+        return '{%s}' % ', '.join("%r: %r" % (k, v) for k, v in self._items)
 
-    @staticmethod
-    def _serialize_key(key):
+    def _serialize_key(self, key):
         return cPickle.dumps(key)
+
+
+class OrderedMapSerializedKey(OrderedMap):
+
+    def __init__(self, cass_type, protocol_version):
+        super(OrderedMapSerializedKey, self).__init__()
+        self.cass_key_type = cass_type
+        self.protocol_version = protocol_version
+
+    def _insert_unchecked(self, key, flat_key, value):
+        self._items.append((key, value))
+        self._index[flat_key] = len(self._items) - 1
+
+    def _serialize_key(self, key):
+        return self.cass_key_type.serialize(key, self.protocol_version)
+
+
+import datetime
+import time
+
+if six.PY3:
+    long = int
+
+
+class Time(object):
+    '''
+    Idealized time, independent of day.
+
+    Up to nanosecond resolution
+    '''
+
+    MICRO = 1000
+    MILLI = 1000 * MICRO
+    SECOND = 1000 * MILLI
+    MINUTE = 60 * SECOND
+    HOUR = 60 * MINUTE
+    DAY = 24 * HOUR
+
+    nanosecond_time = 0
+
+    def __init__(self, value):
+        """
+        Initializer value can be:
+
+            - integer_type: absolute nanoseconds in the day
+            - datetime.time: built-in time
+            - string_type: a string time of the form "HH:MM:SS[.mmmuuunnn]"
+        """
+        if isinstance(value, six.integer_types):
+            self._from_timestamp(value)
+        elif isinstance(value, datetime.time):
+            self._from_time(value)
+        elif isinstance(value, six.string_types):
+            self._from_timestring(value)
+        else:
+            raise TypeError('Time arguments must be a whole number, datetime.time, or string')
+
+    @property
+    def hour(self):
+        """
+        The hour component of this time (0-23)
+        """
+        return self.nanosecond_time // Time.HOUR
+
+    @property
+    def minute(self):
+        """
+        The minute component of this time (0-59)
+        """
+        minutes = self.nanosecond_time // Time.MINUTE
+        return minutes % 60
+
+    @property
+    def second(self):
+        """
+        The second component of this time (0-59)
+        """
+        seconds = self.nanosecond_time // Time.SECOND
+        return seconds % 60
+
+    @property
+    def nanosecond(self):
+        """
+        The fractional seconds component of the time, in nanoseconds
+        """
+        return self.nanosecond_time % Time.SECOND
+
+    def _from_timestamp(self, t):
+        if t >= Time.DAY:
+            raise ValueError("value must be less than number of nanoseconds in a day (%d)" % Time.DAY)
+        self.nanosecond_time = t
+
+    def _from_timestring(self, s):
+        try:
+            parts = s.split('.')
+            base_time = time.strptime(parts[0], "%H:%M:%S")
+            self.nanosecond_time = (base_time.tm_hour * Time.HOUR +
+                                    base_time.tm_min * Time.MINUTE +
+                                    base_time.tm_sec * Time.SECOND)
+
+            if len(parts) > 1:
+                # right pad to 9 digits
+                nano_time_str = parts[1] + "0" * (9 - len(parts[1]))
+                self.nanosecond_time += int(nano_time_str)
+
+        except ValueError:
+            raise ValueError("can't interpret %r as a time" % (s,))
+
+    def _from_time(self, t):
+        self.nanosecond_time = (t.hour * Time.HOUR +
+                                t.minute * Time.MINUTE +
+                                t.second * Time.SECOND +
+                                t.microsecond * Time.MICRO)
+
+    def __eq__(self, other):
+        if isinstance(other, Time):
+            return self.nanosecond_time == other.nanosecond_time
+
+        if isinstance(other, six.integer_types):
+            return self.nanosecond_time == other
+
+        return self.nanosecond_time % Time.MICRO == 0 and \
+            datetime.time(hour=self.hour, minute=self.minute, second=self.second,
+                          microsecond=self.nanosecond // Time.MICRO) == other
+
+    def __repr__(self):
+        return "Time(%s)" % self.nanosecond_time
+
+    def __str__(self):
+        return "%02d:%02d:%02d.%09d" % (self.hour, self.minute,
+                                        self.second, self.nanosecond)
+
+
+class Date(object):
+    '''
+    Idealized naive date: year, month, day
+
+    Offers wider year range than datetime.date. For Dates that cannot be represented
+    as a datetime.date (because datetime.MINYEAR, datetime.MAXYEAR), this type falls back
+    to printing days_from_epoch offset.
+    '''
+
+    MINUTE = 60
+    HOUR = 60 * MINUTE
+    DAY = 24 * HOUR
+
+    date_format = "%Y-%m-%d"
+
+    days_from_epoch = 0
+
+    def __init__(self, value):
+        """
+        Initializer value can be:
+
+            - integer_type: absolute days from epoch (1970, 1, 1). Can be negative.
+            - datetime.date: built-in date
+            - string_type: a string time of the form "yyyy-mm-dd"
+        """
+        if isinstance(value, six.integer_types):
+            self.days_from_epoch = value
+        elif isinstance(value, (datetime.date, datetime.datetime)):
+            self._from_timetuple(value.timetuple())
+        elif isinstance(value, six.string_types):
+            self._from_datestring(value)
+        else:
+            raise TypeError('Date arguments must be a whole number, datetime.date, or string')
+
+    @property
+    def seconds(self):
+        """
+        Absolute seconds from epoch (can be negative)
+        """
+        return self.days_from_epoch * Date.DAY
+
+    def date(self):
+        """
+        Return a built-in datetime.date for Dates falling in the years [datetime.MINYEAR, datetime.MAXYEAR]
+
+        ValueError is raised for Dates outside this range.
+        """
+        try:
+            dt = datetime_from_timestamp(self.seconds)
+            return datetime.date(dt.year, dt.month, dt.day)
+        except Exception:
+            raise ValueError("%r exceeds ranges for built-in datetime.date" % self)
+
+    def _from_timetuple(self, t):
+        self.days_from_epoch = calendar.timegm(t) // Date.DAY
+
+    def _from_datestring(self, s):
+        if s[0] == '+':
+            s = s[1:]
+        dt = datetime.datetime.strptime(s, self.date_format)
+        self._from_timetuple(dt.timetuple())
+
+    def __eq__(self, other):
+        if isinstance(other, Date):
+            return self.days_from_epoch == other.days_from_epoch
+
+        if isinstance(other, six.integer_types):
+            return self.days_from_epoch == other
+
+        try:
+            return self.date() == other
+        except Exception:
+            return False
+
+    def __repr__(self):
+        return "Date(%s)" % self.days_from_epoch
+
+    def __str__(self):
+        try:
+            dt = datetime_from_timestamp(self.seconds)
+            return "%04d-%02d-%02d" % (dt.year, dt.month, dt.day)
+        except:
+            # If we overflow datetime.[MIN|M
+            return str(self.days_from_epoch)

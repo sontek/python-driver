@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import json
 import logging
 import re
 from threading import RLock
-import weakref
 import six
 
 murmur3 = None
@@ -31,7 +30,6 @@ except ImportError as e:
 
 import cassandra.cqltypes as types
 from cassandra.marshal import varint_unpack
-from cassandra.pool import Host
 from cassandra.util import OrderedDict
 
 log = logging.getLogger(__name__)
@@ -72,11 +70,7 @@ class Metadata(object):
     token_map = None
     """ A :class:`~.TokenMap` instance describing the ring topology. """
 
-    def __init__(self, cluster):
-        # use a weak reference so that the Cluster object can be GC'ed.
-        # Normally the cycle detector would handle this, but implementing
-        # __del__ disables that.
-        self.cluster_ref = weakref.ref(cluster)
+    def __init__(self):
         self.keyspaces = {}
         self._hosts = {}
         self._hosts_lock = RLock()
@@ -122,10 +116,8 @@ class Metadata(object):
             keyspace_col_rows = col_def_rows.get(keyspace_meta.name, {})
             keyspace_trigger_rows = trigger_rows.get(keyspace_meta.name, {})
             for table_row in cf_def_rows.get(keyspace_meta.name, []):
-                table_meta = self._build_table_metadata(
-                    keyspace_meta, table_row, keyspace_col_rows,
-                    keyspace_trigger_rows)
-                keyspace_meta.tables[table_meta.name] = table_meta
+                table_meta = self._build_table_metadata(keyspace_meta, table_row, keyspace_col_rows, keyspace_trigger_rows)
+                keyspace_meta._add_table_metadata(table_meta)
 
             for usertype_row in usertype_rows.get(keyspace_meta.name, []):
                 usertype = self._build_usertype(keyspace_meta.name, usertype_row)
@@ -160,6 +152,7 @@ class Metadata(object):
         if old_keyspace_meta:
             keyspace_meta.tables = old_keyspace_meta.tables
             keyspace_meta.user_types = old_keyspace_meta.user_types
+            keyspace_meta.indexes = old_keyspace_meta.indexes
             if (keyspace_meta.replication_strategy != old_keyspace_meta.replication_strategy):
                 self._keyspace_updated(keyspace)
         else:
@@ -184,12 +177,11 @@ class Metadata(object):
 
         if not cf_results:
             # the table was removed
-            keyspace_meta.tables.pop(table, None)
+            keyspace_meta._drop_table_metadata(table)
         else:
             assert len(cf_results) == 1
-            keyspace_meta.tables[table] = self._build_table_metadata(
-                keyspace_meta, cf_results[0], {table: col_results},
-                {table: triggers_result})
+            table_meta = self._build_table_metadata(keyspace_meta, cf_results[0], {table: col_results}, {table: triggers_result})
+            keyspace_meta._add_table_metadata(table_meta)
 
     def _keyspace_added(self, ksname):
         if self.token_map:
@@ -385,6 +377,8 @@ class Metadata(object):
         column_meta = ColumnMetadata(table_metadata, name, data_type, is_static=is_static)
         index_meta = self._build_index_metadata(column_meta, row)
         column_meta.index = index_meta
+        if index_meta:
+            table_metadata.indexes[index_meta.name] = index_meta
         return column_meta
 
     def _build_index_metadata(self, column_metadata, row):
@@ -451,17 +445,19 @@ class Metadata(object):
         else:
             return True
 
-    def add_host(self, address, datacenter, rack):
-        cluster = self.cluster_ref()
+    def add_or_return_host(self, host):
+        """
+        Returns a tuple (host, new), where ``host`` is a Host
+        instance, and ``new`` is a bool indicating whether
+        the host was newly added.
+        """
         with self._hosts_lock:
-            if address not in self._hosts:
-                new_host = Host(
-                    address, cluster.conviction_policy_factory, datacenter, rack)
-                self._hosts[address] = new_host
-            else:
-                return None
+            try:
+                return self._hosts[host.address], False
+            except KeyError:
+                self._hosts[host.address] = host
+                return host, True
 
-        return new_host
 
     def remove_host(self, host):
         with self._hosts_lock:
@@ -733,6 +729,11 @@ class KeyspaceMetadata(object):
     A map from table names to instances of :class:`~.TableMetadata`.
     """
 
+    indexes = None
+    """
+    A dict mapping index names to :class:`.IndexMetadata` instances.
+    """
+
     user_types = None
     """
     A map from user-defined type names to instances of :class:`~cassandra.metadata..UserType`.
@@ -745,6 +746,7 @@ class KeyspaceMetadata(object):
         self.durable_writes = durable_writes
         self.replication_strategy = ReplicationStrategy.create(strategy_class, strategy_options)
         self.tables = {}
+        self.indexes = {}
         self.user_types = {}
 
     def export_as_string(self):
@@ -780,6 +782,18 @@ class KeyspaceMetadata(object):
                 self.resolve_user_types(field_type.typename, types, user_type_strings)
         user_type_strings.append(user_type.as_cql_query(formatted=True))
 
+    def _add_table_metadata(self, table_metadata):
+        self._drop_table_metadata(table_metadata.name)
+
+        self.tables[table_metadata.name] = table_metadata
+        for index_name, index_metadata in six.iteritems(table_metadata.indexes):
+            self.indexes[index_name] = index_metadata
+
+    def _drop_table_metadata(self, table_name):
+        table_meta = self.tables.pop(table_name, None)
+        if table_meta:
+            for index_name in table_meta.indexes:
+                self.indexes.pop(index_name, None)
 
 class UserType(object):
     """
@@ -884,6 +898,11 @@ class TableMetadata(object):
     A dict mapping column names to :class:`.ColumnMetadata` instances.
     """
 
+    indexes = None
+    """
+    A dict mapping index names to :class:`.IndexMetadata` instances.
+    """
+
     is_compact_storage = False
 
     options = None
@@ -945,6 +964,7 @@ class TableMetadata(object):
         self.partition_key = [] if partition_key is None else partition_key
         self.clustering_key = [] if clustering_key is None else clustering_key
         self.columns = OrderedDict() if columns is None else columns
+        self.indexes = {}
         self.options = options
         self.comparator = None
         self.triggers = OrderedDict() if triggers is None else triggers
@@ -1241,6 +1261,12 @@ class IndexMetadata(object):
                 protect_name(table.name),
                 protect_name(self.column.name),
                 self.index_options["class_name"])
+
+    def export_as_string(self):
+        """
+        Returns a CQL query string that can be used to recreate this index.
+        """
+        return self.as_cql_query() + ';'
 
 
 class TokenMap(object):

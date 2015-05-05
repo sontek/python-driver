@@ -1,4 +1,4 @@
-# Copyright 2013-2014 DataStax, Inc.
+# Copyright 2013-2015 DataStax, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import types
 from uuid import UUID
 import six
 
-from cassandra.util import OrderedDict, OrderedMap, sortedset
+from cassandra.util import OrderedDict, OrderedMap, sortedset, Time
 
 if six.PY3:
     long = int
@@ -67,13 +67,15 @@ class Encoder(object):
 
     def __init__(self):
         self.mapping = {
-            float: self.cql_encode_object,
+            float: self.cql_encode_float,
             bytearray: self.cql_encode_bytes,
             str: self.cql_encode_str,
             int: self.cql_encode_object,
             UUID: self.cql_encode_object,
             datetime.datetime: self.cql_encode_datetime,
             datetime.date: self.cql_encode_date,
+            datetime.time: self.cql_encode_time,
+            Time: self.cql_encode_time,
             dict: self.cql_encode_map_collection,
             OrderedDict: self.cql_encode_map_collection,
             OrderedMap: self.cql_encode_map_collection,
@@ -136,6 +138,12 @@ class Encoder(object):
         """
         return str(val)
 
+    def cql_encode_float(self, val):
+        """
+        Encode floats using repr to preserve precision
+        """
+        return repr(val)
+
     def cql_encode_datetime(self, val):
         """
         Converts a :class:`datetime.datetime` object to a (string) integer timestamp
@@ -147,9 +155,16 @@ class Encoder(object):
     def cql_encode_date(self, val):
         """
         Converts a :class:`datetime.date` object to a string with format
-        ``YYYY-MM-DD-0000``.
+        ``YYYY-MM-DD``.
         """
-        return "'%s'" % val.strftime('%Y-%m-%d-0000')
+        return "'%s'" % val.strftime('%Y-%m-%d')
+
+    def cql_encode_time(self, val):
+        """
+        Converts a :class:`datetime.date` object to a string with format
+        ``HH:MM:SS.mmmuuunnn``.
+        """
+        return "'%s'" % val
 
     def cql_encode_sequence(self, val):
         """
