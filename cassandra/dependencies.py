@@ -24,7 +24,6 @@ if os.path.exists(build_path):
 
 try:
     import ccassandra
-
     def native_row_parser(rowcount, f, protocol_version, coltypes):
         return ccassandra.parse_result_rows(data=f.read(),
                                             column_types=coltypes,
@@ -32,13 +31,14 @@ try:
                                             protocol_version=protocol_version)
 except ImportError:
     warnings.warn("Using pure python deserialization")
-
     def python_row_parser(rowcount, f, protocol_version, coltypes):
         from cassandra.protocol import read_value
         colcount = len(coltypes)
-        rows = [[read_value(f) for _ in range(colcount)]
-                for _ in range(rowcount)]
-        return [
-            tuple(ctype.from_binary(val, protocol_version)
-                  for ctype, val in zip(coltypes, row))
-            for row in rows]
+
+        for i in range(rowcount):
+            row = [read_value(f) for _ in range(colcount)]
+
+            yield tuple(
+                ctype.from_binary(val, protocol_version)
+                for ctype, val in zip(coltypes, row)
+            )

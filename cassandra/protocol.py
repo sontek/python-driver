@@ -574,8 +574,13 @@ class ResultMessage(_MessageType):
     @classmethod
     def recv_results_rows(cls, f, protocol_version, user_type_map):
         paging_state, column_metadata = cls.recv_results_metadata(f, user_type_map)
-        colnames = [c[2] for c in column_metadata]
-        coltypes = [c[3] for c in column_metadata]
+
+        colnames = []
+        coltypes = []
+
+        for c in column_metadata:
+            colnames.append(c[2])
+            coltypes.append(c[3])
 
         rowcount = read_int(f)
         parsed_rows = default_row_parser(rowcount, f, protocol_version,
