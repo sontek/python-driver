@@ -15,6 +15,7 @@
 from __future__ import absolute_import  # to enable import io from stdlib
 import logging
 import socket
+import warnings
 from uuid import UUID
 
 import six
@@ -38,6 +39,14 @@ from cassandra.cqltypes import (AsciiType, BytesType, BooleanType,
 from cassandra.policies import WriteType
 
 log = logging.getLogger(__name__)
+
+
+
+try:
+    from ccassandra.parser import native_row_parser as default_row_parser
+except ImportError:
+    warnings.warn("Using pure python deserialization")
+    from cassandra.parser import python_row_parser as default_row_parser
 
 
 class NotSupportedError(Exception):
@@ -568,19 +577,12 @@ class ResultMessage(_MessageType):
         return cls(kind, results, paging_state)
 
     @classmethod
-    def _get_parsed_rows(cls, column_metadata, coltypes, f, protocol_version):
-        rowcount = read_int(f)
-        column_length = len(column_metadata)
-        for i in range(rowcount):
-            row = cls.recv_row(f, column_length)
-            yield tuple(
-                ctype.from_binary(val, protocol_version)
-                for ctype, val in zip(coltypes, row)
-            )
-
-    @classmethod
     def recv_results_rows(cls, f, protocol_version, user_type_map):
         paging_state, column_metadata = cls.recv_results_metadata(f, user_type_map)
+        row_count = read_int(f)
+
+        from cassandra.parser import python_row_parser
+
         colnames = []
         coltypes = []
 
@@ -588,11 +590,10 @@ class ResultMessage(_MessageType):
             colnames.append(c[2])
             coltypes.append(c[3])
 
-        parsed_rows = cls._get_parsed_rows(
-            column_metadata,
-            coltypes,
-            f,
-            protocol_version
+
+        parsed_rows = default_row_parser(
+            row_count, column_metadata, f, protocol_version,
+            coltypes
         )
 
         return (paging_state, (colnames, parsed_rows))
