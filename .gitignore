@@ -35,3 +35,4 @@ setuptools*.egg
 
 #iPython
 *.ipynb
+ccassandra.c
