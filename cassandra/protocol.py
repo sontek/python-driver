@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 
 
 try:
-    from ccassandra.parser import native_row_parser as default_row_parser
+    from ccassandra import native_row_parser as default_row_parser
 except ImportError:
     warnings.warn("Using pure python deserialization")
     from cassandra.parser import python_row_parser as default_row_parser

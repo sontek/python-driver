@@ -35,7 +35,7 @@ from distutils.core import Extension
 from distutils.errors import (CCompilerError, DistutilsPlatformError,
                               DistutilsExecError)
 from distutils.cmd import Command
-
+from Cython.Build import cythonize
 
 import os
 import warnings
@@ -132,6 +132,8 @@ libev_ext = Extension('cassandra.io.libevwrapper',
                       libraries=['ev'],
                       library_dirs=['/usr/local/lib', '/opt/local/lib'])
 
+cython_ext = [Extension('ccassandra', sources=['ccassandra.pyx'])]
+
 
 class build_extensions(build_ext):
 
@@ -201,6 +203,8 @@ def run_setup(extensions):
         kw['cmdclass']['eventlet_nosetests'] = eventlet_nosetests
 
     if extensions:
+        extensions += cythonize(cython_ext)
+
         kw['cmdclass']['build_ext'] = build_extensions
         kw['ext_modules'] = extensions
 
