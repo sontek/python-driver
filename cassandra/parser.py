@@ -1,6 +1,7 @@
-def python_row_parser(row_count, column_metadata, f, protocol_version, coltypes):
+def python_row_parser(
+    row_count, column_metadata, f, protocol_version, coltypes
+):
     from cassandra.protocol import read_value
-
     column_length = len(column_metadata)
 
     for i in range(row_count):
